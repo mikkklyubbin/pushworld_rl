@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libpushworld_puzzle.a CMakeFiles/pushworld_puzzle.dir/src/pushworld_puzzle.cc.o
+/usr/bin/ranlib lib/libpushworld_puzzle.a

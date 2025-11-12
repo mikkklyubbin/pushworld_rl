@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/librandom_action_iterator.a CMakeFiles/random_action_iterator.dir/src/search/random_action_iterator.cc.o
+/usr/bin/ranlib lib/librandom_action_iterator.a

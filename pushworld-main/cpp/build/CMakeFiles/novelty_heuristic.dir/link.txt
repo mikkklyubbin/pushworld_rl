@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libnovelty_heuristic.a CMakeFiles/novelty_heuristic.dir/src/heuristics/novelty.cc.o
+/usr/bin/ranlib lib/libnovelty_heuristic.a

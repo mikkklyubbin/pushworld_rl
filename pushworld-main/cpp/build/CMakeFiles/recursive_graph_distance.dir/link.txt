@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/librecursive_graph_distance.a CMakeFiles/recursive_graph_distance.dir/src/heuristics/recursive_graph_distance.cc.o
+/usr/bin/ranlib lib/librecursive_graph_distance.a

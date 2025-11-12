@@ -1,0 +1,4 @@
+gitignore
+*level0
+*/__pycache__
+/home/mik/hse/Pushworld/pushworld-main/python3/src/pushworld/__pycache__

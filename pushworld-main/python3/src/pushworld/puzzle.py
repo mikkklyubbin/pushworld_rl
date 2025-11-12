@@ -405,7 +405,16 @@ class PushWorldPuzzle:
                 count += 1
 
         return count
-
+    
+    def count_sum_distance(self, state: State) -> float:
+        res = 0
+        for entity, goal_entity in zip(
+            state[1 : 1 + len(self._goal_state)], self._goal_state
+        ):
+            res += abs((entity[0] - goal_entity[0])) + abs((entity[1] - goal_entity[1]))
+        res /= 10 
+        return res
+        
     def is_goal_state(self, state: State) -> bool:
         """Returns whether the given state satisfies the goal of this puzzle."""
         return state[1 : 1 + len(self._goal_state)] == self._goal_state

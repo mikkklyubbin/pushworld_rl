@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libdomain_transition_graph.a CMakeFiles/domain_transition_graph.dir/src/heuristics/domain_transition_graph.cc.o
+/usr/bin/ranlib lib/libdomain_transition_graph.a

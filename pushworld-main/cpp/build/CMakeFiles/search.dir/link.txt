@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libsearch.a CMakeFiles/search.dir/src/search/search.cc.o
+/usr/bin/ranlib lib/libsearch.a

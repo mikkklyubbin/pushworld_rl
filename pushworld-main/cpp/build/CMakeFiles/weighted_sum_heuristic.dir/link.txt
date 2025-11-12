@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libweighted_sum_heuristic.a CMakeFiles/weighted_sum_heuristic.dir/src/heuristics/weighted_sum.cc.o
+/usr/bin/ranlib lib/libweighted_sum_heuristic.a
