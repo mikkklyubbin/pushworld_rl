@@ -13,10 +13,11 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from pushworld.gym_env import PushTargetEnv
 from pushworld.gym_env import savergb
-# Определение пути для сохранения лучшей модели
+import pandas as pd
+import dataframe_image as dfi
 model_save_path = "/home/mik/hse/Pushworld/pushworld-main/python3/model/bst"
 
-# Создание EvalCallback
+
 eval_env = DummyVecEnv([lambda: PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/all/train", 100)])
 eval_callback = EvalCallback(
     eval_env,
@@ -69,36 +70,73 @@ class CustomCNN(BaseFeaturesExtractor):
         combined = torch.cat([cell_features, pos_features], dim=1)
         return self.fc(combined)
 
-# Загружаем обученную модель
+
 model = PPO.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/ppo_custom_model.zip")
+id:int = 0
+cool_table = pd.DataFrame({'Type':[], 'Train%':[], 'Test%':[]})
+#, "walls", "shapes", "base", "obstacles", "goals"
+for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
+    print(group)
+    test_env = PushTargetEnv(f"/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/{group}/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
 
+    num_episodes = 200
+    success_count = 0
+    for episode in range(num_episodes):
 
-test_env = PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/all/test", 100)
+        obs, _ = test_env.reset()  
+        terminated = False
+        truncated = False
+        episode_rewards = []
+        while not terminated:
+            action, _ = model.predict(obs)  
 
-# Тестируем модель
-num_episodes = 200
-success_count = 0
-for episode in range(num_episodes):
-    # ИСПРАВЛЕНИЕ: правильно обрабатываем возвращаемое значение reset()
-    obs, _ = test_env.reset()  # Теперь получаем кортеж (observation, info)
-    terminated = False
-    truncated = False
-    episode_rewards = []
-    while not terminated:
-        action, _ = model.predict(obs)  # model.predict также возвращает кортеж
-        # ИСПРАВЛЕНИЕ: правильно обрабатываем возвращаемое значение step()
-        obs, reward, terminated, truncated, info = test_env.step(action)
-        if (terminated):
-            print(11)
-        episode_rewards.append(reward)
-        if (truncated):
-            break
-    # Проверяем, завершился ли эпизод успехом (terminated=True)
-    if terminated:
-        print(1)
-        rgb = test_env.render()
-        savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
-        success_count += 1
-print(f"\nРезультаты за {num_episodes} эпизодов:")
-print(f"Успешных эпизодов: {success_count}")
-print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
+            obs, reward, terminated, truncated, info = test_env.step(action)
+            if (terminated):
+                print(11)
+            episode_rewards.append(reward)
+            if (truncated):
+                break
+            
+        if terminated:
+            print(1)
+            rgb = test_env.render()
+            savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
+            success_count += 1
+    print(f"\nРезультаты за {num_episodes} эпизодов:")
+    print(f"Успешных эпизодов: {success_count}")
+    print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
+    s1 = success_count/num_episodes*100
+
+    test_env = PushTargetEnv(f"/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/{group}/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
+
+    num_episodes = 200
+    success_count = 0
+    for episode in range(num_episodes):
+
+        obs, _ = test_env.reset()  
+        terminated = False
+        truncated = False
+        episode_rewards = []
+        while not terminated:
+            action, _ = model.predict(obs)  
+
+            obs, reward, terminated, truncated, info = test_env.step(action)
+            if (terminated):
+                print(11)
+            episode_rewards.append(reward)
+            if (truncated):
+                break
+            
+        if terminated:
+            print(1)
+            rgb = test_env.render()
+            savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
+            success_count += 1
+    print(f"\nРезультаты за {num_episodes} эпизодов:")
+    print(f"Успешных эпизодов: {success_count}")
+    print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
+    s2 = success_count/num_episodes*100
+    cool_table.loc[id] = [group, s1, s2]
+    id += 1
+
+dfi.export(cool_table, '/home/mik/hse/Pushworld/pushworld-main/benchmark/tables/eval_PushTarget.png')

@@ -69,6 +69,7 @@ class PushWorldEnv(gym.Env):
         need_pddl:bool = False,
         to_height = None,
         to_width = None,
+        seq = False,
     ) -> None:
         self._puzzles = []
         self.pddl = need_pddl
@@ -76,7 +77,8 @@ class PushWorldEnv(gym.Env):
             puzzle_path, PUZZLE_EXTENSION
         ):
             self._puzzles.append(PushWorldPuzzle(puzzle_file_path))
-
+        self.curid= 0
+        self.seq = seq
         if len(self._puzzles) == 0:
             raise ValueError(f"No PushWorld puzzles found in: {puzzle_path}")
         if border_width < 1:
@@ -146,7 +148,20 @@ class PushWorldEnv(gym.Env):
             )
             max_nodes = self._max_cell_height * self._max_cell_width
             max_edges = 8 * max_nodes
-
+            graph_space = gym.spaces.Dict({
+                            'edges':gym.spaces.Box(
+                low=0,
+                high=max_nodes-1, 
+                shape=(max_edges, 2),
+                dtype=np.int32
+            ),
+                            'types':gym.spaces.Box(
+                low=0,
+                high=max_nodes-1, 
+                shape=(max_edges),
+                dtype=np.int32
+            )
+                            })
             graph_space = gym.spaces.Box(
                 low=0,
                 high=max_nodes-1, 
@@ -195,15 +210,18 @@ class PushWorldEnv(gym.Env):
         return set((x + dx, y + dy) for x, y in ob.cells)
     
     def get_relations_graph(self):
-        res = []
+        edges = []
+        types = []
         for x in range(self._max_cell_width):
             for y in range(self._max_cell_height):
                 for dx, dy in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
                     if (self.val_point(x + dx, y + dy)):
-                        res.append((self.code_ver(x, y), self.code_ver(x + dx, y + dy), 0))
+                        edges.append((self.code_ver(x, y), self.code_ver(x + dx, y + dy)))
+                        types.append(0)
                         for dx2, dy2 in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
                             if (self.val_point(x + dx + dx2, y + dy + dy2)):
-                                res.append((self.code_ver(x, y), self.code_ver(x + dx + dx2, y + dy + dy2), 1))
+                                edges.append((self.code_ver(x, y), self.code_ver(x + dx + dx2, y + dy + dy2)))
+                                types.append(1)
         flags = [[0 for y in range(self._max_cell_height)]for x in range(self._max_cell_width)]
         for i in range(1, len(self.current_puzzle.movable_objects)):
             for el in self.get_all_obj(self.current_puzzle.movable_objects[i], self._current_state[i]):
@@ -216,21 +234,27 @@ class PushWorldEnv(gym.Env):
                 flags[el[0]][el[1]] += 4
         for x in range(self._max_cell_width):
             for y in range(self._max_cell_height):
-                res.append((self.code_ver(x, y), self.code_ver(x, y), 2 + bool(flags[x][y] & 4)))
-                res.append((self.code_ver(x, y), self.code_ver(x, y), 4 + bool(flags[x][y] & 2)))
-                res.append((self.code_ver(x, y), self.code_ver(x, y), 6 + bool(flags[x][y] & 1)))
-                    
+                edges.append((self.code_ver(x, y),self.code_ver(x, y)))
+                types.append(2 + bool(flags[x][y] & 4))
+                edges.append((self.code_ver(x, y),self.code_ver(x, y)))
+                types.append(4 + bool(flags[x][y] & 2))
+                edges.append((self.code_ver(x, y),self.code_ver(x, y)))
+                types.append(6 + bool(flags[x][y] & 1))
         max_edges = 8 * self._max_cell_height * self._max_cell_width
-        graph_matrix = np.zeros((max_edges, 3), dtype=np.int32)
+        graph_matrix = np.zeros((max_edges, 2), dtype=np.int32)
+        types_res = np.zeros((max_edges), dtype=np.int32)
 
         # Заполняем матрицу действительными ребрами
-        num_edges = min(len(res), max_edges)
+        num_edges = min(len(edges), max_edges)
         for i in range(num_edges):
-            source, target, edge_type = res[i]
-            graph_matrix[i] = [source, target, edge_type]
+            source, target = edges[i]
+            graph_matrix[i] = [source, target]
+            types_res[i] = types[i]
 
-        # Оставшиеся строки уже заполнены нулями (пустые ребра)
-        return graph_matrix
+        return {
+                'edges':graph_matrix,
+                'types':types_res
+        }
 
 
     def reset(
@@ -258,6 +282,9 @@ class PushWorldEnv(gym.Env):
             self._random_generator = random.Random(seed)
 
         self._current_puzzle = self._random_generator.choice(self._puzzles)
+        if self.seq:
+            self._current_puzzle = self._puzzles[self.curid % len(self._puzzles)]
+            self.curid += 1
         self._current_state = self._current_puzzle.initial_state
         self._current_achieved_goals = self._current_puzzle.count_achieved_goals(
             self._current_state
@@ -362,13 +389,19 @@ class PushTargetEnv(PushWorldEnv):
         border_width: int = DEFAULT_BORDER_WIDTH,
         pixels_per_cell: int = DEFAULT_PIXELS_PER_CELL,
         standard_padding: bool = False,
+        to_height = None,
+        to_width = None,
+        max_obj = None,
+        seq = False,
     ) -> None:
-        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding)
+        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq)
         self.max_mov_ob = 0
         self.max_steps = max_steps
         for el in self._puzzles:
             self.max_mov_ob = max(self.max_mov_ob, len(el._movable_objects))
-        
+        if (max_obj is not None):
+            assert max_obj >= self.max_mov_ob
+            self.max_mov_ob = max_obj
         self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS)
         mat1_ob = gym.spaces.Box(
             low=0.0,
@@ -643,7 +676,7 @@ class PushTargetEnv(PushWorldEnv):
                         savergb(self.render(), "1.jpg")
                         assert(False)
                     if (terminated):
-                        # raise LookupError
+                        raise LookupError
                         print("XXX")
                     rew += reward
                 observation, reward, terminated, truncated, info = super().step(action % 4)

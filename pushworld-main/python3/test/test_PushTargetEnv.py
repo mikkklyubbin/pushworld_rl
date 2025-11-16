@@ -15,15 +15,14 @@ menv = PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/l
 
 eval_env = DummyVecEnv([lambda: PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/all/train", 100)])
 
-# Определение пути для сохранения лучшей модели
 model_save_path = "/home/mik/hse/Pushworld/pushworld-main/python3/model/bst"
 
-# Создание EvalCallback
+
 eval_callback = EvalCallback(
-    eval_env, # Оценочная среда
-    best_model_save_path=model_save_path, # Путь для сохранения
-    eval_freq=200000, # Частота оценки (каждые 10000 шагов)
-    n_eval_episodes=10, # Количество эпизодов для оценки
+    eval_env, 
+    best_model_save_path=model_save_path,
+    eval_freq=200000,
+    n_eval_episodes=10, 
     deterministic=True,
     render=False,
     verbose=1
