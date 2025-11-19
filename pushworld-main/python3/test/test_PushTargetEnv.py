@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from stable_baselines3 import PPO
+from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
@@ -12,6 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '/home/mik/hse/Pus
 from stable_baselines3.common.evaluation import evaluate_policy
 from pushworld.gym_env import PushTargetEnv
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
+from sb3_contrib.common.wrappers import ActionMasker
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -20,7 +22,7 @@ menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
 eval_env = DummyVecEnv([lambda: PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)])
 
-model_save_path = path_to_rep + "python3/model/bst"
+model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []
 train_ac = []
@@ -69,9 +71,6 @@ def test_model(model):
             if (truncated):
                 break
         if terminated:
-            create_rgb_video_opencv(test_env.render_video(),path_to_rep + "python3/fotos/" + str(episode) + ".avi")
-            print(1)
-            rgb = test_env.render()
             success_count += 1
     print(f"\nРезультаты за {num_episodes} эпизодов:")
     print(f"Успешных эпизодов: {success_count}")
@@ -96,8 +95,6 @@ def test_model(model):
             if (truncated):
                 break
         if terminated:
-            print(1)
-            rgb = test_env.render()
             success_count += 1
     print(f"\nРезультаты за {num_episodes} эпизодов:")
     print(f"Успешных эпизодов: {success_count}")
@@ -138,7 +135,7 @@ class StatsCallback(BaseCallback):
 eval_callback = EvalCallback(
     eval_env, 
     best_model_save_path=model_save_path,
-    eval_freq=1000,
+    eval_freq=10000,
     n_eval_episodes=10, 
     deterministic=True,
     render=False,
@@ -191,17 +188,46 @@ class CustomCNN(BaseFeaturesExtractor):
         combined = torch.cat([cell_features, pos_features], dim=1)
         return self.fc(combined)
 
-def train_ppo(env):
-    policy_kwargs = dict(
-        features_extractor_class=CustomCNN,
-        features_extractor_kwargs=dict(features_dim=128),
-        net_arch=[128, 128] 
-    )
+
+class CustomPolicy(ActorCriticPolicy):
+    def __init__(self, observation_space, action_space, lr_schedule, net_arch=None, **kwargs):
+        # Используем кастомный экстрактор признаков
+        super().__init__(
+            observation_space,
+            action_space,
+            lr_schedule,
+            net_arch=[128, 128],  # Ваша архитектура сети
+            features_extractor_class=CustomCNN,
+            features_extractor_kwargs=dict(features_dim=128),
+            **kwargs
+        )
     
+    def _build_mlp_extractor(self) -> None:
+        """
+        Кастомный MLP экстрактор (опционально)
+        Можно переопределить для нестандартной архитектуры
+        """
+        super()._build_mlp_extractor()
+        
+    def forward(self, obs, deterministic=False):
+        """
+        Переопределение forward pass если нужно
+        """
+        actions, values, log_probs = super().forward(obs, deterministic)
+        action_mask = torch.as_tensor(obs["av"], device=log_probs.device, dtype=torch.float32)
+        # Применяем маску к логитам
+        print(log_probs.shape)
+        print(action_mask)
+        log_probs = log_probs - 2e9 * (1 - action_mask)  # Инвертируем маску
+        return (actions, values, log_probs)
+
+def train_ppo(env):
+    
+    # Обертываем среду для поддержки масок
     model = PPO(
-        "MultiInputPolicy",
+        CustomPolicy,  # Передаем класс, а не строку
         env,
-        policy_kwargs=policy_kwargs,
+        policy_kwargs=dict(),  # Дополнительные параметры если нужно
         learning_rate=0.0002,
         n_epochs=2,
         ent_coef=0.01,
@@ -209,7 +235,7 @@ def train_ppo(env):
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
-    model.learn(total_timesteps=30000000, callback=combined_callback)
+    model.learn(total_timesteps=60000000, callback=combined_callback)
     return model
 
 

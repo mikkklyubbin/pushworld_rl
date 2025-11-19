@@ -397,6 +397,7 @@ class PushTargetEnv(PushWorldEnv):
         super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq)
         self.max_mov_ob = 0
         self.max_steps = max_steps
+        self.acts = []
         for el in self._puzzles:
             self.max_mov_ob = max(self.max_mov_ob, len(el._movable_objects))
         if (max_obj is not None):
@@ -451,6 +452,36 @@ class PushTargetEnv(PushWorldEnv):
     def current_puzzle(self) -> PushWorldPuzzle or None:
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
+    
+    
+    def get_av_act(self):
+        av = np.zeros(self.action_space.shape)
+        av[0] = av[1] = av[2] = av[3] = 1
+        mv_b = self.current_puzzle.movable_objects
+        st = self._current_state
+        self.get_matrix_reachability()
+        puz = self.current_puzzle
+        for action in range(4, len(mv_b) * 4):
+            dx, dy = Actions.DISPLACEMENTS[action % 4]
+            good = False
+            for i in range(puz.dimensions[0]):
+                for j in range(puz.dimensions[1]):
+                    all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, (-i -dx, -j -dy))
+                    an_cells = subtract_from_points(mv_b[action // 4].cells, (-st[action // 4][0], -st[action // 4][1]))
+                    good:bool = False
+                    for el in all_cells:
+                        for el2 in an_cells:
+                            if (int(el[0]) == int(el2[0]) and int(el[1]) == int(el2[1])):
+                                good = True
+                                break
+                        if (good):
+                            break
+                    if (good):
+                        break
+                if (good):
+                    break
+            av[action] = good
+        return av
 
 
     def get_current_pos(self):
@@ -486,7 +517,7 @@ class PushTargetEnv(PushWorldEnv):
         """
         mat1, info = super().reset(seed, options)
         self._steps = 0
-
+        self.acts = []
         obs = {
             'cell': mat1,
             'positions': self.get_current_pos()
@@ -608,6 +639,7 @@ class PushTargetEnv(PushWorldEnv):
 
         self._steps += 1
         if (action // 4 == 0):
+            self.acts.append(action)
             observation, reward, terminated, truncated, info = super().step(action % 4)
             if terminated or truncated:
                 info["terminal_observation"] = self.convert(observation)
@@ -638,6 +670,7 @@ class PushTargetEnv(PushWorldEnv):
                 act = self.get_action_list(optimal[1], optimal[2])
                 self.add = tuple(self._current_state)
                 # print(act)
+                self.acts += act
                 for el in act:
                     tmp = tuple(self._current_state)
                     observation, reward, terminated, truncated, info = super().step(el)
@@ -679,6 +712,7 @@ class PushTargetEnv(PushWorldEnv):
                         raise LookupError
                         print("XXX")
                     rew += reward
+                self.acts.append(action % 4)
                 observation, reward, terminated, truncated, info = super().step(action % 4)
                 if terminated or truncated:
                     info["terminal_observation"] = self.convert(observation)
@@ -715,3 +749,5 @@ class PushTargetEnv(PushWorldEnv):
             border_width=self._border_width,
             pixels_per_cell=self._pixels_per_cell,
         )
+    def render_video(self):
+        return self.current_puzzle.render_plan(self.acts)
