@@ -189,52 +189,54 @@ class CustomCNN(BaseFeaturesExtractor):
         return self.fc(combined)
 
 
+
 class CustomPolicy(ActorCriticPolicy):
-    def __init__(self, observation_space, action_space, lr_schedule, net_arch=None, **kwargs):
-        # Используем кастомный экстрактор признаков
-        super().__init__(
-            observation_space,
-            action_space,
-            lr_schedule,
-            net_arch=[128, 128],  # Ваша архитектура сети
-            features_extractor_class=CustomCNN,
-            features_extractor_kwargs=dict(features_dim=128),
-            **kwargs
-        )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
     
-    def _build_mlp_extractor(self) -> None:
-        """
-        Кастомный MLP экстрактор (опционально)
-        Можно переопределить для нестандартной архитектуры
-        """
-        super()._build_mlp_extractor()
-        
     def forward(self, obs, deterministic=False):
-        """
-        Переопределение forward pass если нужно
-        """
-        actions, values, log_probs = super().forward(obs, deterministic)
-        action_mask = torch.as_tensor(obs["av"], device=log_probs.device, dtype=torch.float32)
-        # Применяем маску к логитам
-        print(log_probs.shape)
-        print(action_mask)
-        log_probs = log_probs - 2e9 * (1 - action_mask)  # Инвертируем маску
-        return (actions, values, log_probs)
+        # Получаем скрытые представления
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        
+        # Получаем распределение действий
+        distribution = self._get_action_dist_from_latent(latent_pi)
+    
+        # Получаем маску допустимых действий как torch тензор
+        action_mask = torch.tensor(obs["av"], dtype=torch.float32, 
+                                  device=distribution.distribution.logits.device)
+
+        # Правильное применение маски: для запрещенных действий устанавливаем очень низкие логиты
+        modified_logits = distribution.distribution.logits.clone()
+        modified_logits = modified_logits - (1 - action_mask) * 1e9
+        # Создаем новое распределение с модифицированными логитами
+        distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
+        
+        values = self.value_net(latent_vf)
+        actions = distribution.get_actions(deterministic=deterministic)
+        log_prob = distribution.log_prob(actions)
+        
+        return actions, values, log_prob
 
 def train_ppo(env):
-    
-    # Обертываем среду для поддержки масок
+
+    policy_kwargs = dict(
+        features_extractor_class=CustomCNN,
+        features_extractor_kwargs=dict(features_dim=128),
+        net_arch=[128, 128]
+    )
+
     model = PPO(
-        CustomPolicy,  # Передаем класс, а не строку
+        CustomPolicy,  # Используем кастомную политику
         env,
-        policy_kwargs=dict(),  # Дополнительные параметры если нужно
+        policy_kwargs=policy_kwargs,
         learning_rate=0.0002,
         n_epochs=2,
         ent_coef=0.01,
         verbose=1,
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
-    
+
     model.learn(total_timesteps=60000000, callback=combined_callback)
     return model
 
