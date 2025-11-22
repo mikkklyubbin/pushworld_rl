@@ -422,9 +422,11 @@ class PushTargetEnv(PushWorldEnv):
             shape=(self.max_mov_ob, 2),
             dtype=np.float32,
         )
+        av = gym.spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=bool)
         self._observation_space = gym.spaces.Dict({
             'cell': mat1_ob,
-            'positions': pos_ob
+            'positions': pos_ob,
+            'av': av
         })
         #print(self._observation_space['cell'])
 
@@ -455,7 +457,7 @@ class PushTargetEnv(PushWorldEnv):
     
     
     def get_av_act(self):
-        av = np.zeros(self.action_space.shape)
+        av = np.zeros(self.action_space.n, dtype=bool)
         av[0] = av[1] = av[2] = av[3] = 1
         mv_b = self.current_puzzle.movable_objects
         st = self._current_state
@@ -469,18 +471,21 @@ class PushTargetEnv(PushWorldEnv):
                     all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, (-i -dx, -j -dy))
                     an_cells = subtract_from_points(mv_b[action // 4].cells, (-st[action // 4][0], -st[action // 4][1]))
                     good:bool = False
-                    for el in all_cells:
-                        for el2 in an_cells:
-                            if (int(el[0]) == int(el2[0]) and int(el[1]) == int(el2[1])):
-                                good = True
+                    if (self.distance[i][j] < 1e12):
+                        for el in all_cells:
+                            for el2 in an_cells:
+                                if (int(el[0]) == int(el2[0]) and int(el[1]) == int(el2[1])):
+                                    good = True
+                                    break
+                            if (good):
                                 break
                         if (good):
                             break
-                    if (good):
-                        break
                 if (good):
                     break
             av[action] = good
+            
+        assert(av in self.observation_space["av"])
         return av
 
 
@@ -520,7 +525,8 @@ class PushTargetEnv(PushWorldEnv):
         self.acts = []
         obs = {
             'cell': mat1,
-            'positions': self.get_current_pos()
+            'positions': self.get_current_pos(),
+            'av': self.get_av_act()
         }
         # print(self.convert(mat1)['cell'].shape)
         # print(self.get_current_pos().shape)
@@ -604,7 +610,8 @@ class PushTargetEnv(PushWorldEnv):
     def convert(self, observation):
         return {
             'cell': observation,
-            'positions': self.get_current_pos()
+            'positions': self.get_current_pos(),
+            'av':self.get_av_act()
         }
 
     def get_action_list(self, x:int, y:int):
