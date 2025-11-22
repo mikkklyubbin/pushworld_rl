@@ -13,14 +13,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '/home/mik/hse/Pus
 from stable_baselines3.common.evaluation import evaluate_policy
 from pushworld.gym_env import PushTargetEnv
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
-from sb3_contrib.common.wrappers import ActionMasker
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
-eval_env = DummyVecEnv([lambda: PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)])
+eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
 model_save_path = path_to_rep + "python3/model/bst2"
 
@@ -77,7 +76,7 @@ def test_model(model):
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
     test_ac.append(s1)
-    test_env = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = False)
+    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = False)
 
     num_episodes = 200
     success_count = 0
@@ -119,17 +118,22 @@ def test_model(model):
 
 
 class StatsCallback(BaseCallback):
-    def __init__(self, stats_func, verbose=0):
+    def __init__(self, stats_func, eval_freq=10000, verbose=0):
         super().__init__(verbose)
         self.stats_func = stats_func
+        self.eval_freq = eval_freq
+        self.last_eval_step = 0
     
     def _on_step(self) -> bool:
         return True
     
     def _on_rollout_end(self) -> None:
         """Вызывается в конце rollout"""
-        if self.stats_func is not None:
-            self.stats_func(self.model)
+        # Проверяем, прошло ли достаточно шагов с последнего вызова
+        if self.num_timesteps - self.last_eval_step >= self.eval_freq:
+            self.last_eval_step = self.num_timesteps
+            if self.stats_func is not None:
+                self.stats_func(self.model)
 
 # Комбинируем оба callback'а
 eval_callback = EvalCallback(
@@ -195,21 +199,28 @@ class CustomPolicy(ActorCriticPolicy):
         super().__init__(*args, **kwargs)
     
     def forward(self, obs, deterministic=False):
-        # Получаем скрытые представления
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
-        
-        # Получаем распределение действий
         distribution = self._get_action_dist_from_latent(latent_pi)
     
-        # Получаем маску допустимых действий как torch тензор
-        action_mask = torch.tensor(obs["av"], dtype=torch.float32, 
-                                  device=distribution.distribution.logits.device)
-
-        # Правильное применение маски: для запрещенных действий устанавливаем очень низкие логиты
+        # Исправленное получение маски с поддержкой batch
+        action_mask_data = obs["av"]
+        if isinstance(action_mask_data, np.ndarray):
+            action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
+                                      device=distribution.distribution.logits.device)
+        else:
+            # Если это уже тензор
+            action_mask = action_mask_data.to(dtype=torch.float32, 
+                                            device=distribution.distribution.logits.device)
+        
+        # Убедимся, что маска имеет правильную shape
+        if len(action_mask.shape) == 1:
+            action_mask = action_mask.unsqueeze(0)  # Добавляем batch dimension
+        
+        # Правильное применение маски
         modified_logits = distribution.distribution.logits.clone()
         modified_logits = modified_logits - (1 - action_mask) * 1e9
-        # Создаем новое распределение с модифицированными логитами
+        
         distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
         
         values = self.value_net(latent_vf)
@@ -217,6 +228,34 @@ class CustomPolicy(ActorCriticPolicy):
         log_prob = distribution.log_prob(actions)
         
         return actions, values, log_prob
+    
+    def evaluate_actions(self, obs, actions):
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+
+        # То же исправление для evaluate_actions
+        action_mask_data = obs["av"]
+        if isinstance(action_mask_data, np.ndarray):
+            action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
+                                      device=distribution.distribution.logits.device)
+        else:
+            action_mask = action_mask_data.to(dtype=torch.float32, 
+                                            device=distribution.distribution.logits.device)
+        
+        if len(action_mask.shape) == 1:
+            action_mask = action_mask.unsqueeze(0)
+            
+        modified_logits = distribution.distribution.logits.clone()
+        modified_logits = modified_logits - (1 - action_mask) * 1e9
+        distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
+
+        values = self.value_net(latent_vf)
+        log_prob = distribution.log_prob(actions)
+        entropy = distribution.entropy()
+
+        return values, log_prob, entropy
+    
 
 def train_ppo(env):
 
