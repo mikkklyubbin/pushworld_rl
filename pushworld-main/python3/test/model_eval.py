@@ -5,29 +5,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from stable_baselines3 import PPO
+from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '/home/mik/hse/Pushworld/pushworld-main/python3/src/pushworld'))
 from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.monitor import Monitor
 from pushworld.gym_env import PushTargetEnv
-from pushworld.gym_env import savergb
-import pandas as pd
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
+import matplotlib.pyplot as plt
+import numpy as np
 import dataframe_image as dfi
-model_save_path = "/home/mik/hse/Pushworld/pushworld-main/python3/model/bst"
-
-
-eval_env = DummyVecEnv([lambda: PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/all/train", 100)])
-eval_callback = EvalCallback(
-    eval_env,
-    best_model_save_path=model_save_path,
-    eval_freq=200000,
-    n_eval_episodes=10,
-    deterministic=True,
-    render=False,
-    verbose=1
-)
+import cv2
+import pandas as pd
+from pushworld.gym_env import savergb
+model_save_path = "/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip"
 
 class CustomCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=128):
@@ -71,11 +63,111 @@ class CustomCNN(BaseFeaturesExtractor):
         return self.fc(combined)
 
 
-model = PPO.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/ppo_custom_model.zip")
+
+class CustomPolicy(ActorCriticPolicy):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _predict(self, observation, deterministic=False):
+        """
+        Override _predict to ensure proper observation handling
+        """
+        # Убедитесь, что observation является тензором
+        if not isinstance(observation, dict):
+            observation = self.obs_to_tensor(observation)
+        else:
+            # Если это уже словарь тензоров, убедитесь они на правильном устройстве
+            observation = {key: torch.as_tensor(value, device=self.device) 
+                          for key, value in observation.items()}
+        
+        with torch.no_grad():
+            # forward возвращает кортеж (actions, values, log_prob)
+            actions, values, log_prob = self.forward(observation, deterministic=deterministic)
+        # Извлекаем только actions и применяем .cpu().numpy() к ним
+        return actions
+    
+    def forward(self, obs, deterministic=False):
+        #print(obs["cell"].shape)
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+    
+        # Исправленное получение маски с поддержкой batch
+        action_mask_data = obs["av"]
+        if isinstance(action_mask_data, np.ndarray):
+            action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
+                                      device=distribution.distribution.logits.device)
+        else:
+            # Если это уже тензор
+            action_mask = action_mask_data.to(dtype=torch.float32, 
+                                            device=distribution.distribution.logits.device)
+        
+        # Убедимся, что маска имеет правильную shape
+        if len(action_mask.shape) == 1:
+            action_mask = action_mask.unsqueeze(0)  # Добавляем batch dimension
+        
+        # Правильное применение маски
+        modified_logits = distribution.distribution.logits.clone()
+        modified_logits = modified_logits - (1 - action_mask) * 1e9
+        
+        distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
+        
+        values = self.value_net(latent_vf)
+        actions = distribution.get_actions(deterministic=deterministic)
+        log_prob = distribution.log_prob(actions)
+        
+        return actions, values, log_prob
+    
+    def evaluate_actions(self, obs, actions):
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+
+        # То же исправление для evaluate_actions
+        action_mask_data = obs["av"]
+        if isinstance(action_mask_data, np.ndarray):
+            action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
+                                      device=distribution.distribution.logits.device)
+        else:
+            action_mask = action_mask_data.to(dtype=torch.float32, 
+                                            device=distribution.distribution.logits.device)
+        
+        if len(action_mask.shape) == 1:
+            action_mask = action_mask.unsqueeze(0)
+            
+        modified_logits = distribution.distribution.logits.clone()
+        modified_logits = modified_logits - (1 - action_mask) * 1e9
+        distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
+
+        values = self.value_net(latent_vf)
+        log_prob = distribution.log_prob(actions)
+        entropy = distribution.entropy()
+
+        return values, log_prob, entropy
+    
+
+policy_kwargs = dict(
+    features_extractor_class=CustomCNN,
+    features_extractor_kwargs=dict(features_dim=128),
+    net_arch=[128, 128]
+)
+
+model = PPO.load(
+    model_save_path,
+    custom_objects={
+        "policy_class": CustomPolicy,
+        "policy_kwargs": {
+            "features_extractor_class": CustomCNN,
+            "features_extractor_kwargs": dict(features_dim=128),
+            "net_arch": [128, 128]
+        }
+    },
+    device='cuda' if torch.cuda.is_available() else 'cpu'
+)
 id:int = 0
-cool_table = pd.DataFrame({'Type':[], 'Train%':[], 'Test%':[]})
+cool_table = pd.DataFrame({'Type':[], 'Test%':[], 'Train%':[]})
 #, "walls", "shapes", "base", "obstacles", "goals"
-for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
+for group in ["all"]:
     print(group)
     test_env = PushTargetEnv(f"/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/{group}/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
 
@@ -91,14 +183,11 @@ for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
             action, _ = model.predict(obs)  
 
             obs, reward, terminated, truncated, info = test_env.step(action)
-            if (terminated):
-                print(11)
             episode_rewards.append(reward)
             if (truncated):
                 break
             
         if terminated:
-            print(1)
             rgb = test_env.render()
             savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
             success_count += 1
@@ -121,14 +210,11 @@ for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
             action, _ = model.predict(obs)  
 
             obs, reward, terminated, truncated, info = test_env.step(action)
-            if (terminated):
-                print(11)
             episode_rewards.append(reward)
             if (truncated):
                 break
             
         if terminated:
-            print(1)
             rgb = test_env.render()
             savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
             success_count += 1

@@ -16,10 +16,10 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
+path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
-eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
+eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100)
 
 model_save_path = path_to_rep + "python3/model/bst2"
 
@@ -76,7 +76,7 @@ def test_model(model):
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
     test_ac.append(s1)
-    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = False)
+    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
 
     num_episodes = 200
     success_count = 0
@@ -118,7 +118,7 @@ def test_model(model):
 
 
 class StatsCallback(BaseCallback):
-    def __init__(self, stats_func, eval_freq=10000, verbose=0):
+    def __init__(self, stats_func, eval_freq=50000, verbose=0):
         super().__init__(verbose)
         self.stats_func = stats_func
         self.eval_freq = eval_freq
@@ -197,8 +197,27 @@ class CustomCNN(BaseFeaturesExtractor):
 class CustomPolicy(ActorCriticPolicy):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def _predict(self, observation, deterministic=False):
+        """
+        Override _predict to ensure proper observation handling
+        """
+        # Убедитесь, что observation является тензором
+        if not isinstance(observation, dict):
+            observation = self.obs_to_tensor(observation)
+        else:
+            # Если это уже словарь тензоров, убедитесь они на правильном устройстве
+            observation = {key: torch.as_tensor(value, device=self.device) 
+                          for key, value in observation.items()}
+        
+        with torch.no_grad():
+            # forward возвращает кортеж (actions, values, log_prob)
+            actions, values, log_prob = self.forward(observation, deterministic=deterministic)
+        # Извлекаем только actions и применяем .cpu().numpy() к ним
+        return actions
     
     def forward(self, obs, deterministic=False):
+        #print(obs["cell"].shape)
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi)
