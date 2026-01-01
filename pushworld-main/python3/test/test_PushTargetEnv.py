@@ -16,7 +16,7 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100)
@@ -202,18 +202,14 @@ class CustomPolicy(ActorCriticPolicy):
         """
         Override _predict to ensure proper observation handling
         """
-        # Убедитесь, что observation является тензором
         if not isinstance(observation, dict):
             observation = self.obs_to_tensor(observation)
         else:
-            # Если это уже словарь тензоров, убедитесь они на правильном устройстве
             observation = {key: torch.as_tensor(value, device=self.device) 
                           for key, value in observation.items()}
         
         with torch.no_grad():
-            # forward возвращает кортеж (actions, values, log_prob)
             actions, values, log_prob = self.forward(observation, deterministic=deterministic)
-        # Извлекаем только actions и применяем .cpu().numpy() к ним
         return actions
     
     def forward(self, obs, deterministic=False):
@@ -221,22 +217,16 @@ class CustomPolicy(ActorCriticPolicy):
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi)
-    
-        # Исправленное получение маски с поддержкой batch
         action_mask_data = obs["av"]
         if isinstance(action_mask_data, np.ndarray):
             action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
                                       device=distribution.distribution.logits.device)
         else:
-            # Если это уже тензор
             action_mask = action_mask_data.to(dtype=torch.float32, 
                                             device=distribution.distribution.logits.device)
-        
-        # Убедимся, что маска имеет правильную shape
         if len(action_mask.shape) == 1:
-            action_mask = action_mask.unsqueeze(0)  # Добавляем batch dimension
+            action_mask = action_mask.unsqueeze(0)
         
-        # Правильное применение маски
         modified_logits = distribution.distribution.logits.clone()
         modified_logits = modified_logits - (1 - action_mask) * 1e9
         
@@ -252,8 +242,6 @@ class CustomPolicy(ActorCriticPolicy):
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi)
-
-        # То же исправление для evaluate_actions
         action_mask_data = obs["av"]
         if isinstance(action_mask_data, np.ndarray):
             action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
@@ -285,7 +273,7 @@ def train_ppo(env):
     )
 
     model = PPO(
-        CustomPolicy,  # Используем кастомную политику
+        CustomPolicy,
         env,
         policy_kwargs=policy_kwargs,
         learning_rate=0.0002,
@@ -303,31 +291,3 @@ model = train_ppo(menv)
 
 model.save(path_to_rep + "python3/model/ppo_custom_model")
 
-# test_env = PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/all/train", 100)
-
-# # Загружаем обученную модель
-# model = PPO.load("ppo_custom_model")
-
-# # Тестируем модель
-# num_episodes = 100
-# success_count = 0
-
-# for episode in range(num_episodes):
-#     obs = test_env.reset()
-#     done = False
-#     episode_rewards = []
-    
-#     while not done:
-#         action, _states = model.predict(obs, deterministic=True)
-#         obs, reward, done, info = test_env.step(action)
-#         episode_rewards.append(reward)
-    
-#     # Проверяем, завершился ли эпизод успехом (terminated=True)
-#     if info.get('terminated', False):
-#         success_count += 1
-        
-#     print(f"Эпизод {episode + 1}: Награда = {sum(episode_rewards):.2f}, Успех = {info.get('terminated', False)}")
-
-# print(f"\nРезультаты за {num_episodes} эпизодов:")
-# print(f"Успешных эпизодов: {success_count}")
-# print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
