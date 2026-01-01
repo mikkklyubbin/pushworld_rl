@@ -24,6 +24,7 @@ from pushworld.puzzle import (
     DEFAULT_BORDER_WIDTH,
     DEFAULT_PIXELS_PER_CELL,
     NUM_ACTIONS,
+    NUM_AD_ACTIONS,
     AGENT_IDX,
     PushWorldPuzzle,
     PushWorldObject,
@@ -368,6 +369,26 @@ class PushWorldEnv(gym.Env):
             border_width=self._border_width,
             pixels_per_cell=self._pixels_per_cell,
         )
+    
+    def get_all_info(self):
+        obs = render_observation_padded(self._current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width)
+        terminated = self._current_puzzle.is_goal_state(self._current_state)
+
+        if terminated:
+            reward = 10.0
+        else:
+            reward = -0.01
+
+        truncated = False if self._max_steps is None else self._steps >= self._max_steps
+        info = {"puzzle_state": self._current_state}
+        if (self.pddl):
+            return {
+                'cell': obs,
+                'graph': self.get_relations_graph()
+            }, reward, terminated, truncated, info
+
+        return obs, reward, terminated, truncated, info
+        
 
 
 def savergb(rgb_array, name):
@@ -403,7 +424,7 @@ class PushTargetEnv(PushWorldEnv):
         if (max_obj is not None):
             assert max_obj >= self.max_mov_ob
             self.max_mov_ob = max_obj
-        self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS)
+        self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS)
         mat1_ob = gym.spaces.Box(
             low=0.0,
             high=1.0,
@@ -458,8 +479,9 @@ class PushTargetEnv(PushWorldEnv):
     
     def get_av_act(self):
         av = np.zeros(self.action_space.n, dtype=bool)
-        av[0] = av[1] = av[2] = av[3] = 1
         mv_b = self.current_puzzle.movable_objects
+        av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * NUM_AD_ACTIONS] = 1
+        av[0] = av[1] = av[2] = av[3] = 1
         st = self._current_state
         self.get_matrix_reachability()
         puz = self.current_puzzle
@@ -645,6 +667,19 @@ class PushTargetEnv(PushWorldEnv):
             raise RuntimeError("reset() must be called before step() can be called.")
 
         self._steps += 1
+        if (action >= NUM_ACTIONS * self.max_mov_ob):
+            action = action - NUM_ACTIONS * self.max_mov_ob
+            if (action % 2 == 1):
+                self.current_puzzle.concentrate(action // 2)
+            else:
+                self.current_puzzle.deconcentrate(action // 2)
+            observation, reward, terminated, truncated, info = self.get_all_info()
+            if terminated or truncated:
+                info["terminal_observation"] = self.convert(observation)
+            else:
+                info["terminal_observation"] = None
+            return self.convert(observation), reward, terminated, truncated, info
+            
         if (action // 4 == 0):
             self.acts.append(action)
             observation, reward, terminated, truncated, info = super().step(action % 4)

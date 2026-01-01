@@ -26,6 +26,7 @@ DEFAULT_BORDER_WIDTH = 2
 DEFAULT_PIXELS_PER_CELL = 20
 
 NUM_ACTIONS = 4
+NUM_AD_ACTIONS = 2
 AGENT_IDX = 0
 
 
@@ -311,7 +312,7 @@ class PushWorldPuzzle:
 
         self._pushed_objects = np.zeros((num_movables,), bool)
         self._pushed_objects[AGENT_IDX] = True
-        self._colors = [0.7 for i in range(len(self.movable_objects))]
+        self._colors = [1.0 for i in range(len(self.movable_objects))]
 
     @property
     def initial_state(self) -> State:
@@ -434,6 +435,14 @@ class PushWorldPuzzle:
             state = self.get_next_state(state, action)
 
         return self.is_goal_state(state)
+    
+    def concentrate(self, i:int):
+        self._colors[i] *= 1.1
+        self._colors[i] = min(1.0, self._colors[i])
+        
+    def deconcentrate(self, i:int):
+        self._colors[i] *= 0.9
+        self._colors[i] = max(0.0, self._colors[i])
 
     def render(
         self,
