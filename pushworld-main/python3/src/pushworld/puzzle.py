@@ -95,6 +95,8 @@ class PushWorldObject:
     fill_color: Color
     border_color: Color
     cells: Set[Point]
+    def get_col(self, color:float):
+        return (self.fill_color[0] * color,self.fill_color[1] * color, self.fill_color[2] * color )
 
 
 class PushWorldPuzzle:
@@ -309,6 +311,7 @@ class PushWorldPuzzle:
 
         self._pushed_objects = np.zeros((num_movables,), bool)
         self._pushed_objects[AGENT_IDX] = True
+        self._colors = [0.7 for i in range(len(self.movable_objects))]
 
     @property
     def initial_state(self) -> State:
@@ -460,12 +463,15 @@ class PushWorldPuzzle:
         image = np.ones(image_shape, np.uint8) * 255
 
         objects = [(self._walls, self._walls.position)]
+        
         if self._agent_walls is not None:
             objects.insert(0, (self._agent_walls, self._agent_walls.position))
-
+        cols = [1.0 for i in range(len(objects))]
         objects += zip(self._movable_objects, state)
+        cols += self._colors
         objects += [(g, g.position) for g in self._goals]
-
+        cols += [1.0 for i in range(len(self._goals))]
+        id = 0
         for obj, pos in objects:
             _draw_object(
                 obj=obj,
@@ -473,7 +479,9 @@ class PushWorldPuzzle:
                 image=image,
                 pixels_per_cell=pixels_per_cell,
                 border_width=border_width,
+                color=cols[id]
             )
+            id += 1
 
         return image
 
@@ -608,6 +616,7 @@ def _draw_object(
     image: np.ndarray,
     pixels_per_cell: int,
     border_width: int,
+    color:float = 1,
 ) -> None:
     """Draws the object into the given image.
 
@@ -635,7 +644,7 @@ def _draw_object(
     for cell in obj.cells:
         c, r = (position + cell) * pixels_per_cell
         if obj.fill_color is not None:
-            image[r : r + pixels_per_cell, c : c + pixels_per_cell] = obj.fill_color
+            image[r : r + pixels_per_cell, c : c + pixels_per_cell] = obj.get_col(color)
 
         for dr, dc in border_offsets:
             if (cell[0] + dc, cell[1] + dr) not in obj.cells:
