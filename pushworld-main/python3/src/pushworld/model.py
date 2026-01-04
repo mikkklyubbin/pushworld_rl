@@ -137,5 +137,5 @@ def train_ppo(env, callback, total_timesteps=60000000):
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
 
-    model.learn(total_timesteps=60000000, callback=callback)
+    model.learn(total_timesteps=total_timesteps, callback=callback)
     return model

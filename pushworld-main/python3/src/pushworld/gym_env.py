@@ -33,7 +33,7 @@ from pushworld.puzzle import (
 )
 from pushworld.utils.env_utils import get_max_puzzle_dimensions, render_observation_padded
 from pushworld.utils.filesystem import iter_files_with_extension
-
+from pushworld.rendering import savergb
 
 class PushWorldEnv(gym.Env):
     """An OpenAI Gym environment for PushWorld puzzles.
@@ -388,12 +388,6 @@ class PushWorldEnv(gym.Env):
         return obs, reward, terminated, truncated, info
         
 
-
-def savergb(rgb_array, name):
-    if rgb_array.dtype == np.float32 or rgb_array.dtype == np.float64:
-        rgb_array = (rgb_array * 255).astype(np.uint8)
-    bgr_array = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(name, bgr_array)
 class PushTargetEnv(PushWorldEnv):
     def __init__(
         self,
@@ -658,8 +652,8 @@ class PushTargetEnv(PushWorldEnv):
         if self._current_state is None:
             raise RuntimeError("reset() must be called before step() can be called.")
 
-        self._steps += 1
         if (action >= NUM_ACTIONS * self.max_mov_ob):
+            self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
             if (action % 2 == 1):
                 self.current_puzzle.concentrate(action // 2)
