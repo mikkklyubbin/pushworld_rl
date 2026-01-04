@@ -16,7 +16,8 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
+from pushworld.rendering import savergb
+path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100)
@@ -26,30 +27,25 @@ model_save_path = path_to_rep + "python3/model/bst2"
 test_ac = []
 train_ac = []
 
-def create_rgb_video_opencv(data, output_file='rgb_video.avi', fps=10):
-    """
-    Создает видео из RGB данных используя OpenCV
-    """
-    # Получаем размеры первого кадра
-    first_frame = data[0]
-    height, width = first_frame.shape[:2]
+# def create_rgb_video_opencv(data, output_file='rgb_video.avi', fps=10):
+#     """
+#     Создает видео из RGB данных используя OpenCV
+#     """
+#     first_frame = data[0]
+#     height, width = first_frame.shape[:2]
     
-    # Создаем VideoWriter
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+#     fourcc = cv2.VideoWriter_fourcc(*'XVID')
+#     out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
     
-    for i, rgb_frame in enumerate(data):
-        # Конвертируем RGB в BGR (OpenCV использует BGR)
-        bgr_frame = cv2.cvtColor((rgb_frame * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+#     for i, rgb_frame in enumerate(data):
+#         bgr_frame = cv2.cvtColor((rgb_frame * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+#         cv2.putText(bgr_frame, f'Frame: {i}', (10, 30), 
+#                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         
-        # Добавляем текст с номером кадра
-        cv2.putText(bgr_frame, f'Frame: {i}', (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        
-        out.write(bgr_frame)
+#         out.write(bgr_frame)
     
-    out.release()
-    print(f"Video saved as {output_file}")
+#     out.release()
+#     print(f"Video saved as {output_file}")
 
 def test_model(model):
     test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
@@ -128,27 +124,23 @@ class StatsCallback(BaseCallback):
         return True
     
     def _on_rollout_end(self) -> None:
-        """Вызывается в конце rollout"""
-        # Проверяем, прошло ли достаточно шагов с последнего вызова
         if self.num_timesteps - self.last_eval_step >= self.eval_freq:
             self.last_eval_step = self.num_timesteps
             if self.stats_func is not None:
                 self.stats_func(self.model)
 
-# Комбинируем оба callback'а
 eval_callback = EvalCallback(
     eval_env, 
     best_model_save_path=model_save_path,
     eval_freq=10000,
     n_eval_episodes=10, 
-    deterministic=True,
+    deterministic=False,
     render=False,
     verbose=1
 )
 
 stats_callback = StatsCallback(stats_func=test_model)
 
-# Объединяем в один callback
 combined_callback = CallbackList([eval_callback, stats_callback])
 
 class CustomCNN(BaseFeaturesExtractor):

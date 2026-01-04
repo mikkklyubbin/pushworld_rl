@@ -72,18 +72,16 @@ class CustomPolicy(ActorCriticPolicy):
         """
         Override _predict to ensure proper observation handling
         """
-        # Убедитесь, что observation является тензором
         if not isinstance(observation, dict):
             observation = self.obs_to_tensor(observation)
         else:
-            # Если это уже словарь тензоров, убедитесь они на правильном устройстве
             observation = {key: torch.as_tensor(value, device=self.device) 
                           for key, value in observation.items()}
         
         with torch.no_grad():
-            # forward возвращает кортеж (actions, values, log_prob)
+
             actions, values, log_prob = self.forward(observation, deterministic=deterministic)
-        # Извлекаем только actions и применяем .cpu().numpy() к ним
+
         return actions
     
     def forward(self, obs, deterministic=False):
@@ -92,21 +90,17 @@ class CustomPolicy(ActorCriticPolicy):
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi)
     
-        # Исправленное получение маски с поддержкой batch
         action_mask_data = obs["av"]
         if isinstance(action_mask_data, np.ndarray):
             action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
                                       device=distribution.distribution.logits.device)
         else:
-            # Если это уже тензор
             action_mask = action_mask_data.to(dtype=torch.float32, 
                                             device=distribution.distribution.logits.device)
         
-        # Убедимся, что маска имеет правильную shape
         if len(action_mask.shape) == 1:
-            action_mask = action_mask.unsqueeze(0)  # Добавляем batch dimension
+            action_mask = action_mask.unsqueeze(0) 
         
-        # Правильное применение маски
         modified_logits = distribution.distribution.logits.clone()
         modified_logits = modified_logits - (1 - action_mask) * 1e9
         
@@ -122,8 +116,6 @@ class CustomPolicy(ActorCriticPolicy):
         features = self.extract_features(obs)
         latent_pi, latent_vf = self.mlp_extractor(features)
         distribution = self._get_action_dist_from_latent(latent_pi)
-
-        # То же исправление для evaluate_actions
         action_mask_data = obs["av"]
         if isinstance(action_mask_data, np.ndarray):
             action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
@@ -164,10 +156,11 @@ model = PPO.load(
     },
     device='cuda' if torch.cuda.is_available() else 'cpu'
 )
+
 id:int = 0
 cool_table = pd.DataFrame({'Type':[], 'Test%':[], 'Train%':[]})
 #, "walls", "shapes", "base", "obstacles", "goals"
-for group in ["all"]:
+for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
     print(group)
     test_env = PushTargetEnv(f"/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/{group}/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
 

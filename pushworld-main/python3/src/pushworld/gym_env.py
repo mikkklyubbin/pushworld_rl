@@ -244,8 +244,6 @@ class PushWorldEnv(gym.Env):
         max_edges = 8 * self._max_cell_height * self._max_cell_width
         graph_matrix = np.zeros((max_edges, 2), dtype=np.int32)
         types_res = np.zeros((max_edges), dtype=np.int32)
-
-        # Заполняем матрицу действительными ребрами
         num_edges = min(len(edges), max_edges)
         for i in range(num_edges):
             source, target = edges[i]
@@ -394,13 +392,7 @@ class PushWorldEnv(gym.Env):
 def savergb(rgb_array, name):
     if rgb_array.dtype == np.float32 or rgb_array.dtype == np.float64:
         rgb_array = (rgb_array * 255).astype(np.uint8)
-
-    # OpenCV uses BGR format, so convert RGB to BGR
     bgr_array = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR)
-
-    # Save the image
-    cv2.imwrite(name, bgr_array)
-    # or
     cv2.imwrite(name, bgr_array)
 class PushTargetEnv(PushWorldEnv):
     def __init__(
