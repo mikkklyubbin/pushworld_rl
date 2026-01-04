@@ -13,10 +13,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '/home/mik/hse/Pus
 from stable_baselines3.common.evaluation import evaluate_policy
 from pushworld.gym_env import PushTargetEnv
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
+from pushworld.model import CustomCNN, CustomPolicy, train_ppo
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-from pushworld.rendering import savergb
+from pushworld.rendering import savergb, create_rgb_video_opencv
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
 
@@ -26,26 +27,6 @@ model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []
 train_ac = []
-
-# def create_rgb_video_opencv(data, output_file='rgb_video.avi', fps=10):
-#     """
-#     Создает видео из RGB данных используя OpenCV
-#     """
-#     first_frame = data[0]
-#     height, width = first_frame.shape[:2]
-    
-#     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-#     out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
-    
-#     for i, rgb_frame in enumerate(data):
-#         bgr_frame = cv2.cvtColor((rgb_frame * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
-#         cv2.putText(bgr_frame, f'Frame: {i}', (10, 30), 
-#                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        
-#         out.write(bgr_frame)
-    
-#     out.release()
-#     print(f"Video saved as {output_file}")
 
 def test_model(model):
     test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
@@ -143,143 +124,8 @@ stats_callback = StatsCallback(stats_func=test_model)
 
 combined_callback = CallbackList([eval_callback, stats_callback])
 
-class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128):
-        super(CustomCNN, self).__init__(observation_space, features_dim)
-        
-        self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((6, 6)), 
-            nn.Flatten(),
-        )
-        
-        with torch.no_grad():
-            cell_shape = observation_space.spaces['cell'].shape
-            sample_input = torch.rand(1, cell_shape[2], cell_shape[0], cell_shape[1])
-            n_flatten = self.cnn(sample_input).shape[1]
-        
-        self.fc = nn.Sequential(
-            nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, 256),
-            nn.ReLU(),
-            nn.Linear(256, features_dim),
-            nn.ReLU(),
-        )
-        
-    def forward(self, observations):
-        cell_obs = observations['cell']
-        if len(cell_obs.shape) == 3:
-            cell_obs = cell_obs.permute(2, 0, 1).unsqueeze(0)
-        else:
-            cell_obs = cell_obs.permute(0, 3, 1, 2)
-        cell_features = self.cnn(cell_obs)
-        pos_obs = observations['positions']
-        batch_size = pos_obs.shape[0]
-        pos_features = pos_obs.reshape(batch_size, -1)
-        
-        combined = torch.cat([cell_features, pos_features], dim=1)
-        return self.fc(combined)
 
-
-
-class CustomPolicy(ActorCriticPolicy):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def _predict(self, observation, deterministic=False):
-        """
-        Override _predict to ensure proper observation handling
-        """
-        if not isinstance(observation, dict):
-            observation = self.obs_to_tensor(observation)
-        else:
-            observation = {key: torch.as_tensor(value, device=self.device) 
-                          for key, value in observation.items()}
-        
-        with torch.no_grad():
-            actions, values, log_prob = self.forward(observation, deterministic=deterministic)
-        return actions
-    
-    def forward(self, obs, deterministic=False):
-        #print(obs["cell"].shape)
-        features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-        distribution = self._get_action_dist_from_latent(latent_pi)
-        action_mask_data = obs["av"]
-        if isinstance(action_mask_data, np.ndarray):
-            action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
-                                      device=distribution.distribution.logits.device)
-        else:
-            action_mask = action_mask_data.to(dtype=torch.float32, 
-                                            device=distribution.distribution.logits.device)
-        if len(action_mask.shape) == 1:
-            action_mask = action_mask.unsqueeze(0)
-        
-        modified_logits = distribution.distribution.logits.clone()
-        modified_logits = modified_logits - (1 - action_mask) * 1e9
-        
-        distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
-        
-        values = self.value_net(latent_vf)
-        actions = distribution.get_actions(deterministic=deterministic)
-        log_prob = distribution.log_prob(actions)
-        
-        return actions, values, log_prob
-    
-    def evaluate_actions(self, obs, actions):
-        features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-        distribution = self._get_action_dist_from_latent(latent_pi)
-        action_mask_data = obs["av"]
-        if isinstance(action_mask_data, np.ndarray):
-            action_mask = torch.tensor(action_mask_data, dtype=torch.float32, 
-                                      device=distribution.distribution.logits.device)
-        else:
-            action_mask = action_mask_data.to(dtype=torch.float32, 
-                                            device=distribution.distribution.logits.device)
-        
-        if len(action_mask.shape) == 1:
-            action_mask = action_mask.unsqueeze(0)
-            
-        modified_logits = distribution.distribution.logits.clone()
-        modified_logits = modified_logits - (1 - action_mask) * 1e9
-        distribution.distribution = torch.distributions.Categorical(logits=modified_logits)
-
-        values = self.value_net(latent_vf)
-        log_prob = distribution.log_prob(actions)
-        entropy = distribution.entropy()
-
-        return values, log_prob, entropy
-    
-
-def train_ppo(env):
-
-    policy_kwargs = dict(
-        features_extractor_class=CustomCNN,
-        features_extractor_kwargs=dict(features_dim=128),
-        net_arch=[128, 128]
-    )
-
-    model = PPO(
-        CustomPolicy,
-        env,
-        policy_kwargs=policy_kwargs,
-        learning_rate=0.0002,
-        n_epochs=2,
-        ent_coef=0.01,
-        verbose=1,
-        device='cuda' if torch.cuda.is_available() else 'cpu'
-    )
-
-    model.learn(total_timesteps=60000000, callback=combined_callback)
-    return model
-
-
-model = train_ppo(menv)
+model = train_ppo(menv, combined_callback)
 
 model.save(path_to_rep + "python3/model/ppo_custom_model")
 
