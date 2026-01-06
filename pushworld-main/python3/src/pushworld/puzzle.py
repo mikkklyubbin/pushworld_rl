@@ -130,7 +130,7 @@ class PushWorldPuzzle:
         render_plan: Creates a video of a given plan, starting from the initial state.
     """
 
-    def __init__(self, file_path: str) -> None:
+    def __init__(self, file_path: str, augment = False) -> None:
         obj_pixels = defaultdict(set)
 
         with open(file_path, "r") as fi:
@@ -158,10 +158,23 @@ class PushWorldPuzzle:
             raise ValueError(
                 "Every puzzle must have an agent object, indicated by 'a'."
             )
-
-        # Add walls at the boundaries of the puzzle
         width = self._width = x + 2
         height = self._height = y + 2
+        if (augment):
+            vert = np.random.randint(0, 2)
+            hor = np.random.randint(0, 2)
+            for key, val in obj_pixels:
+                nw_val = set()
+                for el in val:
+                    tmpx = el[0]
+                    tmpy = el[1]
+                    if (hor):
+                        tmpx = self._width - tmpx-1
+                    if (vert):
+                        tmpy = self._height - tmpy-1
+                    nw_val.add((tmpx, tmpy))
+                obj_pixels[key] = nw_val
+        # Add walls at the boundaries of the puzzle
 
         for xx in range(width):
             obj_pixels["w"].add((xx, 0))
