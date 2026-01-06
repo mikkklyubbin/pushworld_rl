@@ -29,7 +29,7 @@ test_ac = []
 train_ac = []
 
 def test_model(model):
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 50, to_height = 11, to_width = 11, max_obj = 5, seq = True)
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
 
     num_episodes = 200
     success_count = 0
@@ -53,7 +53,7 @@ def test_model(model):
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
     test_ac.append(s1)
-    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 50, to_height = 11, to_width = 11, max_obj = 5, seq = True)
+    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
 
     num_episodes = 200
     success_count = 0
