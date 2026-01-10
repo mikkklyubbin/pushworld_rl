@@ -20,8 +20,8 @@ model = PPO.load(
         "policy_class": CustomPolicy,
         "policy_kwargs": {
             "features_extractor_class": CustomCNN,
-            "features_extractor_kwargs": dict(features_dim=128),
-            "net_arch": [128, 128]
+            "features_extractor_kwargs": dict(features_dim=256),
+            "net_arch": [256, 256]
         }
     },
     device='cuda' if torch.cuda.is_available() else 'cpu'

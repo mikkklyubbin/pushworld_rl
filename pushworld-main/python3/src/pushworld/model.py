@@ -15,8 +15,15 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
+            nn.BatchNorm2d(64),
             nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
             nn.ReLU(),
+            nn.BatchNorm2d(64),
+            nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=5, stride=1, padding=2),
+            nn.ReLU(),
+            nn.BatchNorm2d(128),
             nn.AdaptiveAvgPool2d((6, 6)), 
             nn.Flatten(),
         )
@@ -122,8 +129,8 @@ def train_ppo(env, callback, total_timesteps=60000000):
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
-        features_extractor_kwargs=dict(features_dim=128),
-        net_arch=[128, 128]
+        features_extractor_kwargs=dict(features_dim=256),
+        net_arch=[256, 256]
     )
 
     model = PPO(
