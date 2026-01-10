@@ -77,7 +77,7 @@ class PushWorldEnv(gym.Env):
         self.pddl = need_pddl
         self.puzzle_path = puzzle_path
         self.augment = augment
-        self.augment_timer = 200
+        self.augment_timer = 10
         for puzzle_file_path in iter_files_with_extension(
             puzzle_path, PUZZLE_EXTENSION
         ):
@@ -413,11 +413,14 @@ class PushTargetEnv(PushWorldEnv):
         max_obj = None,
         seq = False,
         augment = False,
+        loop_penalty =0,
     ) -> None:
         super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment)
         self.max_mov_ob = 0
         self.max_steps = max_steps
         self.acts = []
+        self.hash_history = {}
+        self.loop_penalty = loop_penalty
         for el in self._puzzles:
             self.max_mov_ob = max(self.max_mov_ob, len(el._movable_objects))
         if (max_obj is not None):
@@ -476,7 +479,14 @@ class PushTargetEnv(PushWorldEnv):
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
     
-    # def 
+    def add_cur_hash(self):
+        h1 = hash(self._current_state)
+        h2 = hash(tuple(self._current_puzzle._colors))
+        if (hash((h1, h2)) in self.hash_history):
+            return 1
+        self.hash_history[hash((h1, h2))] = 1
+        return 0 
+
     
     
     def get_av_act(self):
@@ -553,6 +563,7 @@ class PushTargetEnv(PushWorldEnv):
         self.prev_av = None
         self.distance  = None
         self.par = None
+        self.hash_history = {}
         obs = {
             'cell': mat1,
             'positions': self.get_current_pos(),
@@ -565,6 +576,7 @@ class PushTargetEnv(PushWorldEnv):
         info["terminal_observation"] = None
         assert(self.convert(mat1) in self.observation_space)
         assert(obs in self.observation_space)
+        self.add_cur_hash()
         return obs, info
     
     def get_all_cells(self, ob:PushWorldObject, pos):
@@ -676,6 +688,7 @@ class PushTargetEnv(PushWorldEnv):
                 info["terminal_observation"] = self.convert(observation)
             else:
                 info["terminal_observation"] = None
+            reward -= self.add_cur_hash() * self.loop_penalty
             return self.convert(observation), reward, terminated, truncated, info
         self.prev_av = None
         if (action // 4 == 0):
@@ -690,6 +703,7 @@ class PushTargetEnv(PushWorldEnv):
             obs = self.convert(observation)
             av_delta += obs["av"].sum()
             #reward += 0.05 * av_delta
+            reward -= self.add_cur_hash() * self.loop_penalty
             return obs, reward, terminated, truncated, info
         dx, dy = Actions.DISPLACEMENTS[action % 4]
         mv_b = self.current_puzzle.movable_objects
@@ -724,6 +738,7 @@ class PushTargetEnv(PushWorldEnv):
                     else:
                         info["terminal_observation"] = None
                     if (truncated):
+                        reward -= self.add_cur_hash() * self.loop_penalty
                         return self.convert(observation), rew + reward, terminated, truncated, info
                     if (tmp[1:] != self._current_state[1:]):
                         print(act)
@@ -768,6 +783,7 @@ class PushTargetEnv(PushWorldEnv):
                 obs = self.convert(observation)
                 av_delta += obs["av"].sum()
                 #reward += 0.05 * av_delta
+                reward -= self.add_cur_hash() * self.loop_penalty
                 return obs, reward + rew, terminated, truncated, info
             else:
                 rew = -1
