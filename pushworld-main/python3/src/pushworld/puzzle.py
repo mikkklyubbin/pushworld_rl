@@ -96,7 +96,9 @@ class PushWorldObject:
     fill_color: Color
     border_color: Color
     cells: Set[Point]
-    def get_col(self, color:float):
+    def get_col(self, color:float, block:bool = False):
+        if (block):
+            return (0, 255 * color, 255 * color)
         return (self.fill_color[0] * color,self.fill_color[1] * color, self.fill_color[2] * color )
 
 
@@ -639,6 +641,7 @@ def _draw_object(
     pixels_per_cell: int,
     border_width: int,
     color:float = 1,
+    blocked:bool = False,
 ) -> None:
     """Draws the object into the given image.
 
