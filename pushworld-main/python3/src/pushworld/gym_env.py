@@ -683,7 +683,7 @@ class PushTargetEnv(PushWorldEnv):
         if (action >= NUM_ACTIONS * self.max_mov_ob):
             self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
-
+            self.acts.append(action + NUM_ACTIONS)
             if (action > 2 * self.max_mov_ob):
                 self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
             elif (action % 2 == 1):
