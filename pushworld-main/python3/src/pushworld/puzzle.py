@@ -26,7 +26,7 @@ DEFAULT_BORDER_WIDTH = 2
 DEFAULT_PIXELS_PER_CELL = 20
 
 NUM_ACTIONS = 4
-NUM_AD_ACTIONS = 2
+NUM_AD_ACTIONS = 3
 AGENT_IDX = 0
 
 
@@ -190,6 +190,7 @@ class PushWorldPuzzle:
         object_positions = {}
         self._movable_objects = []
         self._goals = []
+        
         self._agent_walls = None
 
         # Put the agent in front of all other movables
@@ -328,6 +329,7 @@ class PushWorldPuzzle:
         self._pushed_objects = np.zeros((num_movables,), bool)
         self._pushed_objects[AGENT_IDX] = True
         self._colors = [1.0 for i in range(len(self.movable_objects))]
+        self._block = [False for i in range(len(self.movable_objects))]
 
     @property
     def initial_state(self) -> State:
@@ -451,6 +453,9 @@ class PushWorldPuzzle:
 
         return self.is_goal_state(state)
     
+    def change_block(self, i:int):
+        self._block[i]  = not self._block[i]
+    
     def concentrate(self, i:int):
         self._colors[i] *= 1.1
         self._colors[i] = min(1.0, self._colors[i])
@@ -503,7 +508,8 @@ class PushWorldPuzzle:
                 image=image,
                 pixels_per_cell=pixels_per_cell,
                 border_width=border_width,
-                color=cols[id]
+                color=cols[id],
+                blocked = self._block[id]
             )
             id += 1
 
@@ -669,7 +675,7 @@ def _draw_object(
     for cell in obj.cells:
         c, r = (position + cell) * pixels_per_cell
         if obj.fill_color is not None:
-            image[r : r + pixels_per_cell, c : c + pixels_per_cell] = obj.get_col(color)
+            image[r : r + pixels_per_cell, c : c + pixels_per_cell] = obj.get_col(color, blocked)
 
         for dr, dc in border_offsets:
             if (cell[0] + dc, cell[1] + dr) not in obj.cells:

@@ -667,7 +667,9 @@ class PushTargetEnv(PushWorldEnv):
         if (action >= NUM_ACTIONS * self.max_mov_ob):
             self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
-            if (action % 2 == 1):
+            if (action > 2 * self.max_mov_ob):
+                self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
+            elif (action % 2 == 1):
                 self.current_puzzle.concentrate(action // 2)
             else:
                 self.current_puzzle.deconcentrate(action // 2)
