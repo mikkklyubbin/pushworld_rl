@@ -4,6 +4,7 @@ import pushworld
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -19,17 +20,20 @@ import numpy as np
 import cv2
 from pushworld.rendering import savergb, create_rgb_video_opencv
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
-menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100)
+use_concentrtion:bool = False
+new_actions_rew:float = 0.01
+menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05)
 
-eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100)
-
+eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05)
+name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
+wandb.init(project="test_")
 model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []
 train_ac = []
 
 def test_model(model):
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05)
 
     num_episodes = 200
     success_count = 0
@@ -53,7 +57,7 @@ def test_model(model):
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
     test_ac.append(s1)
-    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True)
+    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05)
 
     num_episodes = 200
     success_count = 0
@@ -77,19 +81,24 @@ def test_model(model):
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
     train_ac.append(s1)
-    plt.figure(figsize=(8, 5))
-    plt.plot([i for i in range(len(test_ac))], test_ac)
-    plt.xlabel('Iterations')
-    plt.ylabel('Accuracy')
-    plt.title('Test Accuracy')
-    plt.savefig(path_to_rep + "python3/fotos/test_ac.png")
-    plt.close()
-    plt.figure(figsize=(8, 5))
+    fig, ax = plt.subplots()
+    # plt.figure(figsize=(8, 5))
+    ax.plot([i for i in range(len(test_ac))], test_ac)
+    ax.set_xlabel('Iterations')
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Test Accuracy')
+    fig.savefig(path_to_rep + "python3/fotos/test_ac.png")
+    wandb.log({"plot_test":fig}, step= len(test_ac) - 1)
+    plt.close(fig)
+    fig, ax = plt.subplots()
+    #plt.figure(figsize=(8, 5))
     plt.plot([i for i in range(len(train_ac))], train_ac)
-    plt.xlabel('Iterations')
-    plt.ylabel('Accuracy')
-    plt.title('Training Accuracy')
-    plt.savefig(path_to_rep + "python3/fotos/train_ac.png")
+    ax.set_xlabel('Iterations')
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Training Accuracy')
+    fig.savefig(path_to_rep + "python3/fotos/train_ac.png")
+    wandb.log({"plot_train":fig}, step= len(train_ac) - 1)
+    wandb.log({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
     plt.close()
     
 
