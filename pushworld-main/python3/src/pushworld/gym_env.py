@@ -413,11 +413,18 @@ class PushTargetEnv(PushWorldEnv):
         max_obj = None,
         seq = False,
         augment = False,
+        loop_penalty =0,
+        new_actions_rew = 0,
+        use_concentrtion = True,
     ) -> None:
         super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment)
         self.max_mov_ob = 0
+        self.use_concentrtion = use_concentrtion
         self.max_steps = max_steps
+        self.new_actions_rew = new_actions_rew
         self.acts = []
+        self.hash_history = {}
+        self.loop_penalty = loop_penalty
         for el in self._puzzles:
             self.max_mov_ob = max(self.max_mov_ob, len(el._movable_objects))
         if (max_obj is not None):
@@ -476,7 +483,14 @@ class PushTargetEnv(PushWorldEnv):
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
     
-    # def 
+    def add_cur_hash(self):
+        h1 = hash(self._current_state)
+        h2 = hash(tuple(self._current_puzzle._colors))
+        if (hash((h1, h2)) in self.hash_history):
+            return 1
+        self.hash_history[hash((h1, h2))] = 1
+        return 0 
+
     
     
     def get_av_act(self):
@@ -484,7 +498,7 @@ class PushTargetEnv(PushWorldEnv):
             return self.prev_av
         av = np.zeros(self.action_space.n, dtype=bool)
         mv_b = self.current_puzzle.movable_objects
-        av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * NUM_AD_ACTIONS] = 1
+        av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * NUM_AD_ACTIONS] = self.use_concentrtion
         av[0] = av[1] = av[2] = av[3] = 1
         st = self._current_state
         self.get_matrix_reachability()
@@ -553,6 +567,7 @@ class PushTargetEnv(PushWorldEnv):
         self.prev_av = None
         self.distance  = None
         self.par = None
+        self.hash_history = {}
         obs = {
             'cell': mat1,
             'positions': self.get_current_pos(),
@@ -565,6 +580,7 @@ class PushTargetEnv(PushWorldEnv):
         info["terminal_observation"] = None
         assert(self.convert(mat1) in self.observation_space)
         assert(obs in self.observation_space)
+        self.add_cur_hash()
         return obs, info
     
     def get_all_cells(self, ob:PushWorldObject, pos):
@@ -667,6 +683,7 @@ class PushTargetEnv(PushWorldEnv):
         if (action >= NUM_ACTIONS * self.max_mov_ob):
             self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
+
             if (action > 2 * self.max_mov_ob):
                 self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
             elif (action % 2 == 1):
@@ -678,6 +695,7 @@ class PushTargetEnv(PushWorldEnv):
                 info["terminal_observation"] = self.convert(observation)
             else:
                 info["terminal_observation"] = None
+            reward -= self.add_cur_hash() * self.loop_penalty
             return self.convert(observation), reward, terminated, truncated, info
         self.prev_av = None
         if (action // 4 == 0):
@@ -691,7 +709,8 @@ class PushTargetEnv(PushWorldEnv):
                 info["terminal_observation"] = None
             obs = self.convert(observation)
             av_delta += obs["av"].sum()
-            #reward += 0.05 * av_delta
+            reward += self.new_actions_rew * av_delta
+            reward -= self.add_cur_hash() * self.loop_penalty
             return obs, reward, terminated, truncated, info
         dx, dy = Actions.DISPLACEMENTS[action % 4]
         mv_b = self.current_puzzle.movable_objects
@@ -726,6 +745,7 @@ class PushTargetEnv(PushWorldEnv):
                     else:
                         info["terminal_observation"] = None
                     if (truncated):
+                        reward -= self.add_cur_hash() * self.loop_penalty
                         return self.convert(observation), rew + reward, terminated, truncated, info
                     if (tmp[1:] != self._current_state[1:]):
                         print(act)
@@ -769,7 +789,8 @@ class PushTargetEnv(PushWorldEnv):
                     info["terminal_observation"] = None
                 obs = self.convert(observation)
                 av_delta += obs["av"].sum()
-                #reward += 0.05 * av_delta
+                reward += self.new_actions_rew * av_delta
+                reward -= self.add_cur_hash() * self.loop_penalty
                 return obs, reward + rew, terminated, truncated, info
             else:
                 rew = -1
@@ -800,5 +821,48 @@ class PushTargetEnv(PushWorldEnv):
             border_width=self._border_width,
             pixels_per_cell=self._pixels_per_cell,
         )
+    
+    def render_acts(
+        self,
+        border_width: int = DEFAULT_BORDER_WIDTH,
+        pixels_per_cell: int = DEFAULT_PIXELS_PER_CELL,
+    ):
+        """Creates a video of the given plan, starting from the initial state.
+        Args:
+            plan: A sequence of actions.
+            border_width: The pixel width of the border drawn to indicate object
+                boundaries. Must be >= 1.
+            pixels_per_cell: The pixel width and height of a discrete position in the
+                environment. Must be >= 1 + 2 * border_width.
+        Returns:
+            A list of RGB images with shape (height, width, 3) and type `uint8`.
+        """
+
+        self.current_puzzle.state = self.current_puzzle._initial_state
+        self.current_puzzle._colors = [1.0 for i in range(len(self.current_puzzle.movable_objects))]
+        state = self.current_puzzle._initial_state
+        image = self.current_puzzle.render(
+            state=state,
+            border_width=border_width,
+            pixels_per_cell=pixels_per_cell,
+        )
+        images = [image]
+        for action in self.acts:
+            if (action >= NUM_ACTIONS):
+                action -= NUM_ACTIONS
+                if (action % 2 == 1):
+                    self.current_puzzle.concentrate(action // 2)
+                else:
+                    self.current_puzzle.deconcentrate(action // 2)
+            else:
+                self.current_puzzle.state = self.current_puzzle.get_next_state(self.current_puzzle.state, action)
+            image = self.current_puzzle.render(
+                state=self.current_puzzle.state,
+                border_width=border_width,
+                pixels_per_cell=pixels_per_cell,
+            )
+            images.append(image)
+        return images
+
     def render_video(self):
         return self.current_puzzle.render_plan(self.acts)

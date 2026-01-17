@@ -165,7 +165,7 @@ class PushWorldPuzzle:
         if (augment):
             vert = np.random.randint(0, 2)
             hor = np.random.randint(0, 2)
-            for key, val in obj_pixels:
+            for key, val in obj_pixels.items():
                 nw_val = set()
                 for el in val:
                     tmpx = el[0]
