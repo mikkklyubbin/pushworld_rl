@@ -416,6 +416,9 @@ class PushTargetEnv(PushWorldEnv):
         loop_penalty =0,
         new_actions_rew = 0,
         use_concentrtion = True,
+        use_block = False,
+        block_rew = 0, 
+        block_peny = 0,
     ) -> None:
         super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment)
         self.max_mov_ob = 0
@@ -423,8 +426,14 @@ class PushTargetEnv(PushWorldEnv):
         self.max_steps = max_steps
         self.new_actions_rew = new_actions_rew
         self.acts = []
+        self.use_block = use_block
         self.hash_history = {}
         self.loop_penalty = loop_penalty
+        self.block_rew = block_rew
+        self.block_peny = block_peny
+        if (self.use_block):
+            assert(self.block_peny  >= 0)
+        assert(self.loop_penalty >= 0)
         for el in self._puzzles:
             self.max_mov_ob = max(self.max_mov_ob, len(el._movable_objects))
         if (max_obj is not None):
@@ -498,7 +507,8 @@ class PushTargetEnv(PushWorldEnv):
             return self.prev_av
         av = np.zeros(self.action_space.n, dtype=bool)
         mv_b = self.current_puzzle.movable_objects
-        av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * NUM_AD_ACTIONS] = self.use_concentrtion
+        av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * 2] = self.use_concentrtion
+        av[self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + 1: self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + len(mv_b)] = self.use_block
         av[0] = av[1] = av[2] = av[3] = 1
         st = self._current_state
         self.get_matrix_reachability()
@@ -680,12 +690,14 @@ class PushTargetEnv(PushWorldEnv):
         if self._current_state is None:
             raise RuntimeError("reset() must be called before step() can be called.")
         av_delta = -self.get_av_act().sum()
+        prev_st = self._current_state
         if (action >= NUM_ACTIONS * self.max_mov_ob):
             self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
             self.acts.append(action + NUM_ACTIONS)
-            if (action > 2 * self.max_mov_ob):
-                self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
+            dlt = 0
+            if (action >= 2 * self.max_mov_ob):
+                dlt = self.current_puzzle.change_block(action - 2 * self.max_mov_ob) * self.block_rew
             elif (action % 2 == 1):
                 self.current_puzzle.concentrate(action // 2)
             else:
@@ -696,7 +708,8 @@ class PushTargetEnv(PushWorldEnv):
             else:
                 info["terminal_observation"] = None
             reward -= self.add_cur_hash() * self.loop_penalty
-            return self.convert(observation), reward, terminated, truncated, info
+            reward += sum(self.current_puzzle._block) * self.block_rew / 200
+            return self.convert(observation), reward + dlt, terminated, truncated, info
         self.prev_av = None
         if (action // 4 == 0):
             self.acts.append(action)
@@ -709,6 +722,9 @@ class PushTargetEnv(PushWorldEnv):
                 info["terminal_observation"] = None
             obs = self.convert(observation)
             av_delta += obs["av"].sum()
+            for i in range(len(prev_st)):
+                if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
+                    reward -= self.block_peny
             reward += self.new_actions_rew * av_delta
             reward -= self.add_cur_hash() * self.loop_penalty
             return obs, reward, terminated, truncated, info
@@ -791,6 +807,10 @@ class PushTargetEnv(PushWorldEnv):
                 av_delta += obs["av"].sum()
                 reward += self.new_actions_rew * av_delta
                 reward -= self.add_cur_hash() * self.loop_penalty
+                for i in range(len(prev_st)):
+                    if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
+                        reward -= self.block_peny
+                reward += self.new_actions_rew * av_delta
                 return obs, reward + rew, terminated, truncated, info
             else:
                 rew = -1

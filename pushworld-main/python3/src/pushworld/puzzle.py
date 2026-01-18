@@ -455,6 +455,9 @@ class PushWorldPuzzle:
     
     def change_block(self, i:int):
         self._block[i]  = not self._block[i]
+        if (self._block[i]):
+            return 1
+        return -1
     
     def concentrate(self, i:int):
         self._colors[i] *= 1.1
@@ -496,11 +499,16 @@ class PushWorldPuzzle:
         if self._agent_walls is not None:
             objects.insert(0, (self._agent_walls, self._agent_walls.position))
         cols = [1.0 for i in range(len(objects))]
+        bls =  [False for i in range(len(objects))]
         objects += zip(self._movable_objects, state)
         cols += self._colors
+        bls += self._block
         objects += [(g, g.position) for g in self._goals]
         cols += [1.0 for i in range(len(self._goals))]
+        bls +=  [False for i in range(len(self._goals))]
         id = 0
+        #print(len(self._block))
+
         for obj, pos in objects:
             _draw_object(
                 obj=obj,
@@ -509,7 +517,7 @@ class PushWorldPuzzle:
                 pixels_per_cell=pixels_per_cell,
                 border_width=border_width,
                 color=cols[id],
-                blocked = self._block[id]
+                blocked = bls[id]
             )
             id += 1
 
