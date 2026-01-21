@@ -460,7 +460,7 @@ class PushWorldPuzzle:
         return -1
     
     def concentrate(self, i:int):
-        self._colors[i] *= 1.1
+        self._colors[i] *= 10/9
         self._colors[i] = min(1.0, self._colors[i])
         
     def deconcentrate(self, i:int):
