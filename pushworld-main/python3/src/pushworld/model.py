@@ -34,9 +34,16 @@ class CustomCNN(BaseFeaturesExtractor):
             n_flatten = self.cnn(sample_input).shape[1]
         
         self.fc = nn.Sequential(
-            nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, 256),
+            nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, 512),
             nn.ReLU(),
-            nn.Linear(256, features_dim),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+        )
+
+        self.for_last = nn.Sequential(
+            nn.Linear(512 + observation_space.spaces['last_ac'].shape[0], 512),
+            nn.ReLU(),
+            nn.Linear(512, features_dim),
             nn.ReLU(),
         )
         
@@ -52,7 +59,8 @@ class CustomCNN(BaseFeaturesExtractor):
         pos_features = pos_obs.reshape(batch_size, -1)
         
         combined = torch.cat([cell_features, pos_features], dim=1)
-        return self.fc(combined)
+        combined2 = torch.cat([self.fc(combined), observations['last_ac']], dim=1)
+        return self.for_last(combined2)
 
 
 
