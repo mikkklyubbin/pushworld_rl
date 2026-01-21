@@ -18,7 +18,7 @@ def create_rgb_video_opencv(data, output_file='rgb_video.avi', fps=10):
     out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
     
     for i, rgb_frame in enumerate(data):
-        bgr_frame = cv2.cvtColor((rgb_frame * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+        bgr_frame = cv2.cvtColor((rgb_frame).astype(np.uint8), cv2.COLOR_RGB2BGR)
         cv2.putText(bgr_frame, f'Frame: {i}', (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         
