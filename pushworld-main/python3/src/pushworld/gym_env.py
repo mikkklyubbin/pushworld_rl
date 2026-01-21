@@ -94,7 +94,6 @@ class PushWorldEnv(gym.Env):
         self._max_steps = max_steps
         self._pixels_per_cell = pixels_per_cell
         self._border_width = border_width
-
         widths, heights = zip(*[puzzle.dimensions for puzzle in self._puzzles])
         self._max_cell_width = max(widths)
         self._max_cell_height = max(heights)
@@ -383,11 +382,9 @@ class PushWorldEnv(gym.Env):
     def get_all_info(self):
         obs = render_observation_padded(self._current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width)
         terminated = self._current_puzzle.is_goal_state(self._current_state)
-
+        reward = -0.01
         if terminated:
             reward = 10.0
-        else:
-            reward = -0.01
 
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {"puzzle_state": self._current_state}
@@ -426,6 +423,7 @@ class PushTargetEnv(PushWorldEnv):
         self.max_steps = max_steps
         self.new_actions_rew = new_actions_rew
         self.acts = []
+        self.last_moves = [0, 0, 0, 0]
         self.use_block = use_block
         self.hash_history = {}
         self.loop_penalty = loop_penalty
@@ -458,11 +456,18 @@ class PushTargetEnv(PushWorldEnv):
             shape=(self.max_mov_ob, 2),
             dtype=np.float32,
         )
+        last_ac = gym.spaces.Box(
+            low=0.0,
+            high=max(self._max_cell_height, self._max_cell_width),
+            shape=(NUM_ACTIONS, ),
+            dtype=np.float32,
+        )
         av = gym.spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=bool)
         self._observation_space = gym.spaces.Dict({
             'cell': mat1_ob,
             'positions': pos_ob,
-            'av': av
+            'av': av,
+            'last_ac': last_ac
         })
         self.prev_av = None
         #print(self._observation_space['cell'])
@@ -516,20 +521,16 @@ class PushTargetEnv(PushWorldEnv):
         for action in range(4, len(mv_b) * 4):
             dx, dy = Actions.DISPLACEMENTS[action % 4]
             good = False
-            for i in range(puz.dimensions[0]):
-                for j in range(puz.dimensions[1]):
-                    all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, (-i -dx, -j -dy))
-                    an_cells = subtract_from_points(mv_b[action // 4].cells, (-st[action // 4][0], -st[action // 4][1]))
-                    good:bool = False
-                    if (self.distance[i][j] < 1e12):
-                        for el in all_cells:
-                            for el2 in an_cells:
-                                if (int(el[0]) == int(el2[0]) and int(el[1]) == int(el2[1])):
-                                    good = True
-                                    break
-                            if (good):
-                                break
-                        if (good):
+            all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, ( -dx, -dy))
+            an_cells = subtract_from_points(mv_b[action // 4].cells, (-st[action // 4][0], -st[action // 4][1]))
+            for el in all_cells:
+                for el2 in an_cells:
+                    #el[0] + i = el2[0] => el2[0] - el[0] = i
+                    i:int = int(el2[0] - el[0])
+                    j:int  = int(el2[1] - el[1])
+                    if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1]):
+                        if (self.distance[i][j] < 1e12):
+                            good = True
                             break
                 if (good):
                     break
@@ -574,6 +575,7 @@ class PushTargetEnv(PushWorldEnv):
         mat1, info = super().reset(seed, options)
         self._steps = 0
         self.acts = []
+        self.last_moves = [0, 0, 0, 0]
         self.prev_av = None
         self.distance  = None
         self.par = None
@@ -581,7 +583,8 @@ class PushTargetEnv(PushWorldEnv):
         obs = {
             'cell': mat1,
             'positions': self.get_current_pos(),
-            'av': self.get_av_act()
+            'av': self.get_av_act(),
+            'last_ac': np.array(self.last_moves,dtype=np.float32),
         }
         # print(self.convert(mat1)['cell'].shape)
         # print(self.get_current_pos().shape)
@@ -657,7 +660,8 @@ class PushTargetEnv(PushWorldEnv):
         return {
             'cell': observation,
             'positions': self.get_current_pos(),
-            'av':self.get_av_act()
+            'av':self.get_av_act(),
+            'last_ac':np.array(self.last_moves,dtype=np.float32),
         }
 
     def get_action_list(self, x:int, y:int):
@@ -675,7 +679,19 @@ class PushTargetEnv(PushWorldEnv):
             x, y = int(x1),int(y1)
         act.reverse()
         return act
+    
 
+    def rec_alst_moves(self, action:int):
+        pen = 0
+        if (self.last_moves[action % 4] != 0):
+            self.last_moves[action % 4] += 1
+            return 0
+        if (self.last_moves[(action // 2 + (action % 2 + 1) % 2)] != 0):
+            pen = 1
+        self.last_moves = [0, 0, 0, 0]
+        self.last_moves[action % 4] = 1
+        return pen
+        
 
     def step(self, action: int) -> Union[Tuple[np.ndarray, float, bool, dict], Tuple[np.ndarray, float, bool, bool, dict]]:
         """Implements `gym.Env.step`.
@@ -697,7 +713,7 @@ class PushTargetEnv(PushWorldEnv):
             self.acts.append(action + NUM_ACTIONS)
             dlt = 0
             if (action >= 2 * self.max_mov_ob):
-                dlt = self.current_puzzle.change_block(action - 2 * self.max_mov_ob) * self.block_rew
+                self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
             elif (action % 2 == 1):
                 self.current_puzzle.concentrate(action // 2)
             else:
@@ -707,12 +723,11 @@ class PushTargetEnv(PushWorldEnv):
                 info["terminal_observation"] = self.convert(observation)
             else:
                 info["terminal_observation"] = None
-            reward -= self.add_cur_hash() * self.loop_penalty
-            reward += sum(self.current_puzzle._block) * self.block_rew / 200
-            return self.convert(observation), reward + dlt, terminated, truncated, info
+            return self.convert(observation), -0.01, terminated, truncated, info
         self.prev_av = None
         if (action // 4 == 0):
             self.acts.append(action)
+            penalty = self.rec_alst_moves(action) * self.loop_penalty
             observation, reward, terminated, truncated, info = super().step(action % 4)
             self.par = None
             self.distance = None
@@ -726,7 +741,8 @@ class PushTargetEnv(PushWorldEnv):
                 if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
                     reward -= self.block_peny
             reward += self.new_actions_rew * av_delta
-            reward -= self.add_cur_hash() * self.loop_penalty
+            reward -= penalty
+            reward += sum(self.current_puzzle._block) * self.block_rew
             return obs, reward, terminated, truncated, info
         dx, dy = Actions.DISPLACEMENTS[action % 4]
         mv_b = self.current_puzzle.movable_objects
@@ -753,8 +769,10 @@ class PushTargetEnv(PushWorldEnv):
                 self.add = tuple(self._current_state)
                 # print(act)
                 self.acts += act
+                penalty = 0
                 for el in act:
                     tmp = tuple(self._current_state)
+                    penalty += self.rec_alst_moves(el) * self.loop_penalty
                     observation, reward, terminated, truncated, info = super().step(el)
                     if terminated or truncated:
                         info["terminal_observation"] = self.convert(observation)
@@ -796,6 +814,7 @@ class PushTargetEnv(PushWorldEnv):
                         print("XXX")
                     rew += reward
                 self.acts.append(action % 4)
+                penalty += self.rec_alst_moves(action % 4) * self.loop_penalty
                 observation, reward, terminated, truncated, info = super().step(action % 4)
                 self.par = None
                 self.distance = None
@@ -806,11 +825,12 @@ class PushTargetEnv(PushWorldEnv):
                 obs = self.convert(observation)
                 av_delta += obs["av"].sum()
                 reward += self.new_actions_rew * av_delta
-                reward -= self.add_cur_hash() * self.loop_penalty
+                reward -= penalty
                 for i in range(len(prev_st)):
                     if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
                         reward -= self.block_peny
                 reward += self.new_actions_rew * av_delta
+                reward += sum(self.current_puzzle._block) * self.block_rew * len(act)
                 return obs, reward + rew, terminated, truncated, info
             else:
                 rew = -1
@@ -825,6 +845,7 @@ class PushTargetEnv(PushWorldEnv):
             info["terminal_observation"] = self.convert(observation)
         else:
             info["terminal_observation"] = None
+        assert("ZZZZ" == "VVV")
         assert(self.convert(observation) in self.observation_space)
         return self.convert(observation), rew, False, truncated, info
 
@@ -870,7 +891,9 @@ class PushTargetEnv(PushWorldEnv):
         for action in self.acts:
             if (action >= NUM_ACTIONS):
                 action -= NUM_ACTIONS
-                if (action % 2 == 1):
+                if (action >= 2 * self.max_mov_ob):
+                    self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
+                elif (action % 2 == 1):
                     self.current_puzzle.concentrate(action // 2)
                 else:
                     self.current_puzzle.deconcentrate(action // 2)
