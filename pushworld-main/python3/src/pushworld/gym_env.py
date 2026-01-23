@@ -429,6 +429,7 @@ class PushTargetEnv(PushWorldEnv):
         self.loop_penalty = loop_penalty
         self.block_rew = block_rew
         self.block_peny = block_peny
+        self.block = None
         if (self.use_block):
             assert(self.block_peny  >= 0)
         assert(self.loop_penalty >= 0)
@@ -514,15 +515,19 @@ class PushTargetEnv(PushWorldEnv):
         mv_b = self.current_puzzle.movable_objects
         av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * 2] = self.use_concentrtion
         av[self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + 1: self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + len(mv_b)] = self.use_block
-        av[0] = av[1] = av[2] = av[3] = 1
         st = self._current_state
+        for a in range(4):
+            av[a] = ((st[0][0], st[0][1]) not in self.current_puzzle._agent_collision_map[a])
         self.get_matrix_reachability()
         puz = self.current_puzzle
         for action in range(4, len(mv_b) * 4):
+            if ((st[action // 4][0], st[action // 4][1]) in self.current_puzzle._wall_collision_map[action % 4][action // 4]): #or self.current_puzzle._block[action // 4]
+                continue
             dx, dy = Actions.DISPLACEMENTS[action % 4]
             good = False
             all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, ( -dx, -dy))
             an_cells = subtract_from_points(mv_b[action // 4].cells, (-st[action // 4][0], -st[action // 4][1]))
+
             for el in all_cells:
                 for el2 in an_cells:
                     #el[0] + i = el2[0] => el2[0] - el[0] = i
@@ -580,6 +585,7 @@ class PushTargetEnv(PushWorldEnv):
         self.distance  = None
         self.par = None
         self.hash_history = {}
+        self.block = None
         obs = {
             'cell': mat1,
             'positions': self.get_current_pos(),
