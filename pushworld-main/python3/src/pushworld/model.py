@@ -137,8 +137,8 @@ def train_ppo(env, callback, total_timesteps=60000000):
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
-        features_extractor_kwargs=dict(features_dim=256),
-        net_arch=[256, 256]
+        features_extractor_kwargs=dict(features_dim=512),
+        net_arch=[512, 512, 512, 512, 256]
     )
 
     model = PPO(
@@ -146,9 +146,11 @@ def train_ppo(env, callback, total_timesteps=60000000):
         env,
         policy_kwargs=policy_kwargs,
         learning_rate=0.0002,
-        n_epochs=2,
+        n_epochs=10,
+        clip_range=0.1,
         ent_coef=0.01,
         verbose=1,
+        batch_size=128,
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
 
