@@ -689,10 +689,12 @@ class PushTargetEnv(PushWorldEnv):
 
     def rec_alst_moves(self, action:int):
         pen = 0
+        action %= 4
         if (self.last_moves[action % 4] != 0):
             self.last_moves[action % 4] += 1
             return 0
-        if (self.last_moves[(action // 2 + (action % 2 + 1) % 2)] != 0):
+        print((action // 2 * 2 + (action % 2 + 1) % 2))
+        if (self.last_moves[(action // 2 * 2 + (action % 2 + 1) % 2)] != 0):
             pen = 1
         self.last_moves = [0, 0, 0, 0]
         self.last_moves[action % 4] = 1
@@ -746,6 +748,9 @@ class PushTargetEnv(PushWorldEnv):
             for i in range(len(prev_st)):
                 if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
                     reward -= self.block_peny
+                if (i > 0 and (self._current_state[i] != prev_st[i])):
+                    print(i)
+                    self.last_moves = [0, 0, 0, 0]
             reward += self.new_actions_rew * av_delta
             reward -= penalty
             reward += sum(self.current_puzzle._block) * self.block_rew
@@ -835,6 +840,8 @@ class PushTargetEnv(PushWorldEnv):
                 for i in range(len(prev_st)):
                     if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
                         reward -= self.block_peny
+                    if (i > 0 and (self._current_state[i] != prev_st[i])):
+                        self.last_moves = [0, 0, 0, 0]
                 reward += self.new_actions_rew * av_delta
                 reward += sum(self.current_puzzle._block) * self.block_rew * len(act)
                 return obs, reward + rew, terminated, truncated, info
