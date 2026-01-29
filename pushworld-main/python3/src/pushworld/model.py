@@ -6,10 +6,11 @@ import torch.nn.functional as F
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO
+from torch_geometric.nn import RGCNConv, global_mean_pool
 class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128):
+    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512):
         super(CustomCNN, self).__init__(observation_space, features_dim)
-        
+        self.need_pddl = need_pddl
         self.cnn = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=3, padding=1),
             nn.ReLU(),
@@ -34,18 +35,35 @@ class CustomCNN(BaseFeaturesExtractor):
             n_flatten = self.cnn(sample_input).shape[1]
         
         self.fc = nn.Sequential(
-            nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, 512),
+            nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, hidden_dim),
             nn.ReLU(),
-            nn.Linear(512, 512),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
         )
 
         self.for_last = nn.Sequential(
-            nn.Linear(512 + observation_space.spaces['last_ac'].shape[0], 512),
+            nn.Linear(hidden_dim + observation_space.spaces['last_ac'].shape[0], hidden_dim),
             nn.ReLU(),
-            nn.Linear(512, features_dim),
+            nn.Linear(hidden_dim, features_dim),
             nn.ReLU(),
         )
+        if (self.need_pddl):
+            self.max_nodes = observation_space["edges"].high[0][0] + 1
+            self.node_feat_dim = node_feature
+            self.num_relations = int(observation_space["types"].high[0]) + 1
+            self.rgcn1 = RGCNConv(self.node_feat_dim, 64, num_relations=self.num_relations)
+            self.rgcn2 = RGCNConv(64, 64, num_relations=self.num_relations)
+            self.node_embeddings = nn.Embedding(
+                self.max_nodes,
+                self.node_feat_dim 
+            )
+            self.node_processor = nn.Linear(64, 64)
+            self.graph_projection = nn.Linear(64, features_dim)
+            self.combiner = nn.Sequential(
+                nn.Linear(hidden_dim + features_dim, hidden_dim),
+                nn.ReLU(),
+            )
+
         
     def forward(self, observations):
         cell_obs = observations['cell']
@@ -59,8 +77,31 @@ class CustomCNN(BaseFeaturesExtractor):
         pos_features = pos_obs.reshape(batch_size, -1)
         
         combined = torch.cat([cell_features, pos_features], dim=1)
-        combined2 = torch.cat([self.fc(combined), observations['last_ac']], dim=1)
-        return self.for_last(combined2)
+        res = self.fc(combined)
+        if (self.need_pddl):
+            edge_index = observations["edges"]
+            edge_type = observations["types"]
+            batch_size = edge_index.shape[0]
+            node_indices = torch.arange(
+                self.max_nodes, 
+                device=edge_index.device
+            ).repeat(batch_size, 1)
+            x = self.node_embeddings(node_indices)
+            x = x.view(-1, self.node_feat_dim)
+            edge_index = edge_index.view(2, -1).long()
+            edge_type = edge_type.view(-1).long()
+            batch = torch.arange(batch_size, device=x.device).repeat_interleave(self.max_nodes)
+            x = self.rgcn1(x, edge_index, edge_type)
+            x = torch.relu(x)
+            x = self.rgcn2(x, edge_index, edge_type)
+            x = torch.relu(x)
+            x = self.node_processor(x)
+            graph_embedding = global_mean_pool(x, batch)
+            x = self.graph_projection(graph_embedding)
+            res = res + self.combiner(torch.cat([res, x], dim=1))
+
+        combined2 = torch.cat([res, observations['last_ac']], dim=1)
+        return self.for_last(combined2) + res
 
 
 
@@ -133,12 +174,12 @@ class CustomPolicy(ActorCriticPolicy):
 
         return values, log_prob, entropy
     
-def train_ppo(env, callback, total_timesteps=60000000):
+def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2):
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
-        features_extractor_kwargs=dict(features_dim=512),
-        net_arch=[512, 512, 512, 512, 256]
+        features_extractor_kwargs=dict(features_dim=features_dim, need_pddl = need_pddl, node_feature = node_feature, hidden_dim=hidden_dim),
+        net_arch=dict(pi=[512, 256], vf=[512, 256])
     )
 
     model = PPO(
@@ -146,11 +187,12 @@ def train_ppo(env, callback, total_timesteps=60000000):
         env,
         policy_kwargs=policy_kwargs,
         learning_rate=0.0002,
-        n_epochs=10,
-        clip_range=0.1,
+        n_epochs=n_epochs,
+        clip_range=0.2,
         ent_coef=0.01,
         verbose=1,
-        batch_size=128,
+        batch_size=batch_size,
+        vf_coef=1,
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
 
