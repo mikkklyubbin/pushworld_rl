@@ -151,32 +151,25 @@ class PushWorldEnv(gym.Env):
                 dtype=np.float32,
             )
             max_nodes = self._max_cell_height * self._max_cell_width
-            max_edges = 8 * max_nodes
-            graph_space = gym.spaces.Dict({
-                            'edges':gym.spaces.Box(
-                low=0,
-                high=max_nodes-1, 
-                shape=(max_edges, 2),
-                dtype=np.int32
-            ),
-                            'types':gym.spaces.Box(
-                low=0,
-                high=max_nodes-1, 
-                shape=(max_edges),
-                dtype=np.int32
-            )
-                            })
-            graph_space = gym.spaces.Box(
-                low=0,
-                high=max_nodes-1, 
-                shape=(max_edges, 3),
-                dtype=np.int32
-            )
+            max_edges = 19 * max_nodes
 
             self._observation_space = gym.spaces.Dict({
                 'cell': cells_space,
-                'graph': graph_space
+                'edges': gym.spaces.Box(
+                    low=0,
+                    high=max_nodes-1, 
+                    shape=(max_edges, 2),
+                    dtype=np.int32
+                ), 
+                'types':gym.spaces.Box(
+                    low=0,
+                    high=8, 
+                    shape=(max_edges,),
+                    dtype=np.int32
+                )
             })
+
+        print(self.observation_space)
 
     @property
     def action_space(self) -> gym.spaces.Space:
@@ -244,7 +237,7 @@ class PushWorldEnv(gym.Env):
                 types.append(4 + bool(flags[x][y] & 2))
                 edges.append((self.code_ver(x, y),self.code_ver(x, y)))
                 types.append(6 + bool(flags[x][y] & 1))
-        max_edges = 8 * self._max_cell_height * self._max_cell_width
+        max_edges = 19 * self._max_cell_height * self._max_cell_width
         graph_matrix = np.zeros((max_edges, 2), dtype=np.int32)
         types_res = np.zeros((max_edges), dtype=np.int32)
         num_edges = min(len(edges), max_edges)
@@ -307,9 +300,11 @@ class PushWorldEnv(gym.Env):
         info = {"puzzle_state": self._current_state}
 
         if (self.pddl):
+            gr  =  self.get_relations_graph()
             return {
                 'cell': observation,
-                'graph': self.get_relations_graph()
+                'edges': gr["edges"],
+                'types': gr['types']
             }, info
 
         return observation, info
@@ -358,11 +353,12 @@ class PushWorldEnv(gym.Env):
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {"puzzle_state": self._current_state}
         if (self.pddl):
+            gr  =  self.get_relations_graph()
             return {
                 'cell': observation,
-                'graph': self.get_relations_graph()
+                'edges': gr["edges"],
+                'types': gr['types']
             }, reward, terminated, truncated, info
-
         return observation, reward, terminated, truncated, info
 
     def render(self, mode='rgb_array') -> np.ndarray:
@@ -389,9 +385,11 @@ class PushWorldEnv(gym.Env):
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {"puzzle_state": self._current_state}
         if (self.pddl):
+            gr  =  self.get_relations_graph()
             return {
                 'cell': obs,
-                'graph': self.get_relations_graph()
+                'edges': gr["edges"],
+                'types': gr['types']
             }, reward, terminated, truncated, info
 
         return obs, reward, terminated, truncated, info
@@ -416,8 +414,9 @@ class PushTargetEnv(PushWorldEnv):
         use_block = False,
         block_rew = 0, 
         block_peny = 0,
+        need_pddl = False
     ) -> None:
-        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment)
+        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl)
         self.max_mov_ob = 0
         self.use_concentrtion = use_concentrtion
         self.max_steps = max_steps
@@ -464,12 +463,23 @@ class PushTargetEnv(PushWorldEnv):
             dtype=np.float32,
         )
         av = gym.spaces.Box(low=0, high=1, shape=(self.action_space.n,), dtype=bool)
+        boss = super().observation_space
         self._observation_space = gym.spaces.Dict({
             'cell': mat1_ob,
             'positions': pos_ob,
             'av': av,
             'last_ac': last_ac
         })
+        if (self.pddl):
+            print(boss)
+            self._observation_space = gym.spaces.Dict({
+                'cell': mat1_ob,
+                'positions': pos_ob,
+                'av': av,
+                'last_ac': last_ac,
+                'edges':boss["edges"], 
+                'types':boss["types"], 
+            })
         self.prev_av = None
         #print(self._observation_space['cell'])
 
@@ -521,7 +531,9 @@ class PushTargetEnv(PushWorldEnv):
         self.get_matrix_reachability()
         puz = self.current_puzzle
         for action in range(4, len(mv_b) * 4):
-            if ((st[action // 4][0], st[action // 4][1]) in self.current_puzzle._wall_collision_map[action % 4][action // 4]): #or self.current_puzzle._block[action // 4]
+            # print(action // 4)
+            # print(self.current_puzzle._block[action // 4])
+            if ((st[action // 4][0], st[action // 4][1]) in self.current_puzzle._wall_collision_map[action % 4][action // 4]) or self.current_puzzle._block[action // 4]: #or self.current_puzzle._block[action // 4]
                 continue
             dx, dy = Actions.DISPLACEMENTS[action % 4]
             good = False
@@ -586,12 +598,7 @@ class PushTargetEnv(PushWorldEnv):
         self.par = None
         self.hash_history = {}
         self.block = None
-        obs = {
-            'cell': mat1,
-            'positions': self.get_current_pos(),
-            'av': self.get_av_act(),
-            'last_ac': np.array(self.last_moves,dtype=np.float32),
-        }
+        obs = self.convert(mat1)
         # print(self.convert(mat1)['cell'].shape)
         # print(self.get_current_pos().shape)
         # print(self.observation_space['positions'])
@@ -599,7 +606,6 @@ class PushTargetEnv(PushWorldEnv):
         info["terminal_observation"] = None
         assert(self.convert(mat1) in self.observation_space)
         assert(obs in self.observation_space)
-        self.add_cur_hash()
         return obs, info
     
     def get_all_cells(self, ob:PushWorldObject, pos):
@@ -663,6 +669,16 @@ class PushTargetEnv(PushWorldEnv):
         self.par = par
 
     def convert(self, observation):
+        if (self.pddl):
+            return {
+                'cell': observation['cell'],
+                'edges':observation['edges'],
+                'types':observation['types'],
+                'positions': self.get_current_pos(),
+                'av':self.get_av_act(),
+                'last_ac':np.array(self.last_moves,dtype=np.float32),
+            }
+
         return {
             'cell': observation,
             'positions': self.get_current_pos(),
@@ -693,7 +709,7 @@ class PushTargetEnv(PushWorldEnv):
         if (self.last_moves[action % 4] != 0):
             self.last_moves[action % 4] += 1
             return 0
-        print((action // 2 * 2 + (action % 2 + 1) % 2))
+        #print((action // 2 * 2 + (action % 2 + 1) % 2))
         if (self.last_moves[(action // 2 * 2 + (action % 2 + 1) % 2)] != 0):
             pen = 1
         self.last_moves = [0, 0, 0, 0]
@@ -722,6 +738,7 @@ class PushTargetEnv(PushWorldEnv):
             dlt = 0
             if (action >= 2 * self.max_mov_ob):
                 self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
+                self.prev_av = None
             elif (action % 2 == 1):
                 self.current_puzzle.concentrate(action // 2)
             else:
@@ -749,7 +766,6 @@ class PushTargetEnv(PushWorldEnv):
                 if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
                     reward -= self.block_peny
                 if (i > 0 and (self._current_state[i] != prev_st[i])):
-                    print(i)
                     self.last_moves = [0, 0, 0, 0]
             reward += self.new_actions_rew * av_delta
             reward -= penalty
