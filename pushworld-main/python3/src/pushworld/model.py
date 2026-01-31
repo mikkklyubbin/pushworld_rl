@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, DQN
 from torch_geometric.nn import RGCNConv, global_mean_pool
 class CustomCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512):
@@ -197,4 +197,37 @@ def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_f
     )
 
     model.learn(total_timesteps=total_timesteps, callback=callback)
+    return model
+
+def train_dqn(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2):
+    policy_kwargs = dict(
+        features_extractor_class=CustomCNN,
+        features_extractor_kwargs=dict(
+            features_dim=features_dim,
+            need_pddl=need_pddl,
+            node_feature=node_feature,
+            hidden_dim=hidden_dim
+        ),
+        net_arch=[512, 256]
+    )
+    model = DQN(
+        "MultiInputPolicy",
+        env,
+        policy_kwargs=policy_kwargs,
+        learning_rate=1e-4,
+        buffer_size=10000,
+        learning_starts=10000,
+        batch_size=batch_size,
+        tau=1.0, 
+        gamma=0.99,
+        train_freq=4,
+        gradient_steps=1,
+        target_update_interval=10000,
+        exploration_fraction=0.1,
+        exploration_initial_eps=1.0,
+        exploration_final_eps=0.05,
+        verbose=1,
+        device='cuda' if torch.cuda.is_available() else 'cpu'
+    )
+    model.learn(total_timesteps=total_timesteps, callback= callback)
     return model
