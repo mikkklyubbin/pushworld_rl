@@ -715,6 +715,20 @@ class PushTargetEnv(PushWorldEnv):
         self.last_moves = [0, 0, 0, 0]
         self.last_moves[action % 4] = 1
         return pen
+    
+    def gen_empty_action_res(self):
+        observation = render_observation_padded(
+            self.current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width,
+        )
+        truncated = False if self._max_steps is None else self._steps >= self._max_steps
+        info = {}
+        if truncated:
+            info["terminal_observation"] = self.convert(observation)
+        else:
+            info["terminal_observation"] = None
+        # assert("ZZZZ" == "VVV")
+        # assert(self.convert(observation) in self.observation_space)
+        return self.convert(observation), -1, False, truncated, info
         
 
     def step(self, action: int) -> Union[Tuple[np.ndarray, float, bool, dict], Tuple[np.ndarray, float, bool, bool, dict]]:
@@ -730,18 +744,27 @@ class PushTargetEnv(PushWorldEnv):
         if self._current_state is None:
             raise RuntimeError("reset() must be called before step() can be called.")
         av_delta = -self.get_av_act().sum()
+        mv_b = self.current_puzzle.movable_objects
         prev_st = self._current_state
         if (action >= NUM_ACTIONS * self.max_mov_ob):
             self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
             self.acts.append(action + NUM_ACTIONS)
             dlt = 0
+            if (action % self.max_mov_ob >= len(mv_b)):
+                return self.gen_empty_action_res()
             if (action >= 2 * self.max_mov_ob):
+                if (not self.use_block):
+                    return self.gen_empty_action_res()
                 self.current_puzzle.change_block(action - 2 * self.max_mov_ob)
                 self.prev_av = None
             elif (action % 2 == 1):
+                if (not self.use_concentrtion):
+                    return self.gen_empty_action_res()
                 self.current_puzzle.concentrate(action // 2)
             else:
+                if (not self.use_concentrtion):
+                    return self.gen_empty_action_res()
                 self.current_puzzle.deconcentrate(action // 2)
             observation, reward, terminated, truncated, info = self.get_all_info()
             if terminated or truncated:
@@ -772,7 +795,6 @@ class PushTargetEnv(PushWorldEnv):
             reward += sum(self.current_puzzle._block) * self.block_rew
             return obs, reward, terminated, truncated, info
         dx, dy = Actions.DISPLACEMENTS[action % 4]
-        mv_b = self.current_puzzle.movable_objects
         st = self._current_state
         optimal = (1e15, -1, -1)
         self.get_matrix_reachability()
@@ -865,18 +887,7 @@ class PushTargetEnv(PushWorldEnv):
                 rew = -1
         else:
             rew = -1
-        observation = render_observation_padded(
-            self.current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width,
-        )
-        truncated = False if self._max_steps is None else self._steps >= self._max_steps
-        info = {}
-        if truncated:
-            info["terminal_observation"] = self.convert(observation)
-        else:
-            info["terminal_observation"] = None
-        assert("ZZZZ" == "VVV")
-        assert(self.convert(observation) in self.observation_space)
-        return self.convert(observation), rew, False, truncated, info
+        return self.gen_empty_action_res()
 
     def render(self, mode='rgb_array') -> np.ndarray:
         """Implements `gym.Env.render`.
