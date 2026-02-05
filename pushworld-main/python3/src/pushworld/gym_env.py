@@ -161,7 +161,7 @@ class PushWorldEnv(gym.Env):
         self._observation_space = cells_space
         if (self.pddl):
             max_nodes = self._max_cell_height * self._max_cell_width
-            max_edges = 19 * max_nodes
+            max_edges = 11 * max_nodes
 
             self._observation_space = gym.spaces.Dict({
                 'cell': cells_space,
@@ -173,7 +173,7 @@ class PushWorldEnv(gym.Env):
                 ), 
                 'types':gym.spaces.Box(
                     low=0,
-                    high=8, 
+                    high=13, 
                     shape=(max_edges,),
                     dtype=np.int32
                 )
@@ -219,16 +219,6 @@ class PushWorldEnv(gym.Env):
     def get_relations_graph(self):
         edges = []
         types = []
-        for x in range(self._max_cell_width):
-            for y in range(self._max_cell_height):
-                for dx, dy in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
-                    if (self.val_point(x + dx, y + dy)):
-                        edges.append((self.code_ver(x, y), self.code_ver(x + dx, y + dy)))
-                        types.append(0)
-                        for dx2, dy2 in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
-                            if (self.val_point(x + dx + dx2, y + dy + dy2)):
-                                edges.append((self.code_ver(x, y), self.code_ver(x + dx + dx2, y + dy + dy2)))
-                                types.append(1)
         flags = [[0 for y in range(self._max_cell_height)]for x in range(self._max_cell_width)]
         for i in range(1, len(self.current_puzzle.movable_objects)):
             for el in self.get_all_obj(self.current_puzzle.movable_objects[i], self._current_state[i]):
@@ -242,12 +232,29 @@ class PushWorldEnv(gym.Env):
         for x in range(self._max_cell_width):
             for y in range(self._max_cell_height):
                 edges.append((self.code_ver(x, y),self.code_ver(x, y)))
-                types.append(2 + bool(flags[x][y] & 4))
+                types.append(bool(flags[x][y] & 4))
                 edges.append((self.code_ver(x, y),self.code_ver(x, y)))
-                types.append(4 + bool(flags[x][y] & 2))
+                types.append(2 + bool(flags[x][y] & 2))
                 edges.append((self.code_ver(x, y),self.code_ver(x, y)))
-                types.append(6 + bool(flags[x][y] & 1))
-        max_edges = 19 * self._max_cell_height * self._max_cell_width
+                types.append(4 + bool(flags[x][y] & 1))
+
+        for x in range(self._max_cell_width):
+            for y in range(self._max_cell_height):
+                cnt = 0
+                for dx, dy in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
+                    if (self.val_point(x + dx, y + dy) and (flags[x][y] & 4) == 0 and (flags[x + dx][y + dy] & 4) == 0):
+                        edges.append((self.code_ver(x, y), self.code_ver(x + dx, y + dy)))
+                        types.append(6 + cnt)
+                    cnt += 1
+        for i in range(0, len(self.current_puzzle.movable_objects)):
+            for x, y in self.get_all_obj(self.current_puzzle.movable_objects[i], self._current_state[i]):
+                cnt = 0
+                for dx, dy in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
+                    if ((x + dx, y + dy) in  self.get_all_obj(self.current_puzzle.movable_objects[i], self._current_state[i])):
+                        edges.append((self.code_ver(x, y), self.code_ver(x + dx, y + dy)))
+                        types.append(10 + cnt)
+                    cnt += 1
+        max_edges = 11 * self._max_cell_height * self._max_cell_width
         graph_matrix = np.zeros((max_edges, 2), dtype=np.int32)
         types_res = np.zeros((max_edges), dtype=np.int32)
         num_edges = min(len(edges), max_edges)
@@ -411,12 +418,17 @@ class PushWorldEnv(gym.Env):
         )
         self._steps = 0
 
-        
+        return self.get_obs_and_info()
+    
+    def get_obs_and_info(self):
+        observation = render_observation_padded(
+            self._current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width,
+        )
         info = {"puzzle_state": self._current_state}
         observation = self.get_observation()
         return observation, info
 
-    def step(self, action: int) -> Union[Tuple[np.ndarray, float, bool, dict], Tuple[np.ndarray, float, bool, bool, dict]]:
+    def step(self, action: int, fast = False) -> Union[Tuple[np.ndarray, float, bool, dict], Tuple[np.ndarray, float, bool, bool, dict]]:
         """Implements `gym.Env.step`.
 
         The returned observation is an RGB image of the new state of the environment,
@@ -687,10 +699,6 @@ class PushTargetEnv(PushWorldEnv):
         self.hash_history = {}
         self.block = None
         obs = self.convert(mat1)
-        # print(self.convert(mat1)['cell'].shape)
-        # print(self.get_current_pos().shape)
-        # print(self.observation_space['positions'])
-        # print(self.get_current_pos() in self.observation_space['positions'])
         info["terminal_observation"] = None
         assert(self.convert(mat1) in self.observation_space)
         assert(obs in self.observation_space)
@@ -738,7 +746,7 @@ class PushTargetEnv(PushWorldEnv):
         action %= 4
         if (self.last_moves[action % 4] != 0):
             self.last_moves[action % 4] += 1
-            return 0
+            return (self.last_moves[action % 4]) >= max(self._max_cell_width, self._max_cell_height)
         #print((action // 2 * 2 + (action % 2 + 1) % 2))
         if (self.last_moves[(action // 2 * 2 + (action % 2 + 1) % 2)] != 0):
             pen = 1
@@ -747,9 +755,7 @@ class PushTargetEnv(PushWorldEnv):
         return pen
     
     def gen_empty_action_res(self):
-        observation = render_observation_padded(
-            self.current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width,
-        )
+        observation, info  = self.get_obs_and_info()
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {}
         if truncated:
@@ -850,7 +856,7 @@ class PushTargetEnv(PushWorldEnv):
                 for el in act:
                     tmp = tuple(self._current_state)
                     penalty += self.rec_alst_moves(el) * self.loop_penalty
-                    observation, reward, terminated, truncated, info = super().step(el)
+                    observation, reward, terminated, truncated, info = super().step(el, fast=True)
                     if terminated or truncated:
                         info["terminal_observation"] = self.convert(observation)
                     else:

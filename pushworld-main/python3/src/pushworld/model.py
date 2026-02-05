@@ -7,8 +7,34 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO, DQN
 from torch_geometric.nn import RGCNConv, global_mean_pool
+class RGCN_ML(torch.nn.Module):
+    def __init__(self, num_layers = 10, features_dim = 128, hidden_dim = 64, outpu_dim = 64, num_relationships = 10):
+        super().__init__()
+        self.layers = torch.nn.ModuleList()
+        self.norms = torch.nn.ModuleList()
+        self.layers.append(RGCNConv(features_dim, hidden_dim, num_relations=num_relationships))
+        self.layers.append(nn.ReLU())
+        self.norms.append(nn.LayerNorm(hidden_dim))
+        for i in range(num_layers):
+            self.layers.append(RGCNConv(hidden_dim, hidden_dim, num_relations=num_relationships))
+            self.layers.append(nn.ReLU())
+            self.norms.append(nn.LayerNorm(hidden_dim))
+        self.layers.append(RGCNConv(hidden_dim, outpu_dim, num_relations=num_relationships))
+        self.layers.append(nn.ReLU())
+        self.norms.append(nn.LayerNorm(outpu_dim))
+    def forward(self, x, edge_index, edge_type):
+        for i in range(0, len(self.layers), 2):
+            y = self.layers[i](x, edge_index, edge_type)
+            y = self.layers[i + 1](y)
+            if (i != 0 and i != len(self.layers) - 2):
+                x = x + y
+            else:
+                x = y
+            x = self.norms[i // 2](x)
+        return x
+
 class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3):
+    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3, num_layers = 10):
         super(CustomCNN, self).__init__(observation_space, features_dim)
         print(in_channels)
         self.need_pddl = need_pddl
@@ -40,31 +66,33 @@ class CustomCNN(BaseFeaturesExtractor):
         self.fc = nn.Sequential(
             nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, features_dim),
             nn.ReLU(),
+            nn.LayerNorm(features_dim)
         )
 
         self.for_last = nn.Sequential(
-            nn.Linear(hidden_dim + observation_space.spaces['last_ac'].shape[0], hidden_dim),
+            nn.Linear(features_dim + observation_space.spaces['last_ac'].shape[0], hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, features_dim),
             nn.ReLU(),
+            nn.LayerNorm(features_dim)
         )
         if (self.need_pddl):
             self.max_nodes = observation_space["edges"].high[0][0] + 1
             self.node_feat_dim = node_feature
             self.num_relations = int(observation_space["types"].high[0]) + 1
-            self.rgcn1 = RGCNConv(self.node_feat_dim, 64, num_relations=self.num_relations)
-            self.rgcn2 = RGCNConv(64, 64, num_relations=self.num_relations)
+            self.rgcn1 = RGCN_ML(num_layers, node_feature, node_feature, node_feature, self.num_relations)
             self.node_embeddings = nn.Embedding(
                 self.max_nodes,
                 self.node_feat_dim 
             )
-            self.node_processor = nn.Linear(64, 64)
-            self.graph_projection = nn.Linear(64, features_dim)
+            self.node_processor = nn.Linear(node_feature, node_feature)
+            self.graph_projection = nn.Linear(node_feature, features_dim)
             self.combiner = nn.Sequential(
-                nn.Linear(hidden_dim + features_dim, hidden_dim),
+                nn.Linear(features_dim + features_dim, features_dim),
                 nn.ReLU(),
+                nn.LayerNorm(features_dim)
             )
 
         
@@ -95,9 +123,6 @@ class CustomCNN(BaseFeaturesExtractor):
             edge_type = edge_type.view(-1).long()
             batch = torch.arange(batch_size, device=x.device).repeat_interleave(self.max_nodes)
             x = self.rgcn1(x, edge_index, edge_type)
-            x = torch.relu(x)
-            x = self.rgcn2(x, edge_index, edge_type)
-            x = torch.relu(x)
             x = self.node_processor(x)
             graph_embedding = global_mean_pool(x, batch)
             x = self.graph_projection(graph_embedding)
