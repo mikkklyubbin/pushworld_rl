@@ -8,11 +8,11 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO, DQN
 from torch_geometric.nn import RGCNConv, global_mean_pool
 class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512):
+    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3):
         super(CustomCNN, self).__init__(observation_space, features_dim)
         self.need_pddl = need_pddl
         self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=3, padding=1),
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
@@ -174,11 +174,11 @@ class CustomPolicy(ActorCriticPolicy):
 
         return values, log_prob, entropy
     
-def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2):
+def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}):
 
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
-        features_extractor_kwargs=dict(features_dim=features_dim, need_pddl = need_pddl, node_feature = node_feature, hidden_dim=hidden_dim),
+        features_extractor_kwargs=dict(features_dim=features_dim, need_pddl = need_pddl, node_feature = node_feature, hidden_dim=hidden_dim, **model_kwargs),
         net_arch=dict(pi=[512, 256], vf=[512, 256])
     )
 
@@ -199,14 +199,15 @@ def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_f
     model.learn(total_timesteps=total_timesteps, callback=callback)
     return model
 
-def train_dqn(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2):
+def train_dqn(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}):
     policy_kwargs = dict(
         features_extractor_class=CustomCNN,
         features_extractor_kwargs=dict(
             features_dim=features_dim,
             need_pddl=need_pddl,
             node_feature=node_feature,
-            hidden_dim=hidden_dim
+            hidden_dim=hidden_dim,
+            **model_kwargs
         ),
         net_arch=[512, 256]
     )
