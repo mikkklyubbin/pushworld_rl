@@ -25,8 +25,9 @@ use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
 block_peny:float = 0
-use_block =  True
+use_block =  False
 loop_penalty = 0.05
+need_pddl = True
 config = {
     "use_concentrtion": use_concentrtion,
     "new_actions_rew": new_actions_rew,
@@ -34,23 +35,27 @@ config = {
     "block_peny": block_peny, 
     "use_block":use_block,
     "loop_penalty":loop_penalty,
+    "need_pddl":need_pddl,
+    "to_height":11,
+    "to_width":11,
+    "max_obj":5,
 }
 
 
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2}
+config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 256, "batch_size": 128, "n_epochs": 10, "need_pddl":need_pddl,}
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
 
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
-wandb.init(project="test_", config={**config_train, **config},name="check_real_block_normal")
+wandb.init(project="test_", config={**config_train, **config},name="check_small_cnn+rgcn")
 model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []
 train_ac = []
 
 def test_model(model):
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, to_height = 11, to_width = 11, max_obj = 5, **config)
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100,  **config)
 
     num_episodes = 200
     success_count = 0
@@ -74,7 +79,7 @@ def test_model(model):
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
     test_ac.append(s1)
-    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True, **config)
+    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, seq = True, **config)
 
     num_episodes = 200
     success_count = 0
@@ -116,41 +121,7 @@ def test_model(model):
     wandb.log({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
     plt.close()
     
-
-
-# class StatsCallback(BaseCallback):
-#     def __init__(self, stats_func, eval_freq=50000, verbose=0):
-#         super().__init__(verbose)
-#         self.stats_func = stats_func
-#         self.eval_freq = eval_freq
-#         self.last_eval_step = 0
-    
-#     def _on_step(self) -> bool:
-#         return True
-    
-#     def _on_rollout_end(self) -> None:
-#         if self.num_timesteps - self.last_eval_step >= self.eval_freq:
-#             self.last_eval_step = self.num_timesteps
-#             if self.stats_func is not None:
-#                 self.stats_func(self.model)
-
-# class MetricsCallback(BaseCallback):
-#     def __init__(self, eval_freq=50000, verbose=0):
-#         super().__init__(verbose)
-#         self.eval_freq = eval_freq
-#         self.last_eval_step = 0
-        
-#     def _on_step(self) -> bool:
-#         return True
-    
-#     def _on_rollout_end(self) -> None:
-#         if self.num_timesteps - self.last_eval_step >= self.eval_freq:
-#             self.last_eval_step = self.num_timesteps
-#             if hasattr(self.model, 'logger') and self.model.logger is not None:
-#                 for key, value in self.model.logger.name_to_value.items():
-#                     if key in ['train/entropy_loss', 'train/policy_gradient_loss', 'train/value_loss', 'train/clip_fraction', 'train/loss', 'train/explained_variance']:
-#                         wandb.log({key: value})
-                    
+             
 
 eval_callback = EvalCallback(
     eval_env, 
@@ -163,7 +134,7 @@ eval_callback = EvalCallback(
 )
 
 stats_callback = StatsCallback(stats_func=test_model)
-metric_call = MetricsCallback(50000)
+metric_call = MetricsCallback(1)
 
 combined_callback = CallbackList([eval_callback, stats_callback, metric_call])
 
