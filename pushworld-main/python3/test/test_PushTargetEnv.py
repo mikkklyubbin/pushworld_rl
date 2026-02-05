@@ -20,7 +20,9 @@ import numpy as np
 import cv2
 from pushworld.rendering import savergb, create_rgb_video_opencv
 from pushworld.callbacks import StatsCallback, MetricsCallback
-path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
+from pushworld.eval import eval_ac
+path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -28,6 +30,8 @@ block_peny:float = 0
 use_block =  False
 loop_penalty = 0.05
 need_pddl = True
+rgb = True
+use_MDP = True
 config = {
     "use_concentrtion": use_concentrtion,
     "new_actions_rew": new_actions_rew,
@@ -39,8 +43,13 @@ config = {
     "to_height":11,
     "to_width":11,
     "max_obj":5,
+    "rgb": rgb,
+    "use_MDP": use_MDP,
 }
-
+in_channels = 3
+if not rgb:
+    in_channels = 5 * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
+model_kwargs = {"in_channels": in_channels}
 
 config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 256, "batch_size": 128, "n_epochs": 10, "need_pddl":need_pddl,}
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
@@ -58,50 +67,11 @@ def test_model(model):
     test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100,  **config)
 
     num_episodes = 200
-    success_count = 0
-    for episode in range(num_episodes):
-
-        obs, _ = test_env.reset()  
-        terminated = False
-        truncated = False
-        episode_rewards = []
-        while not terminated:
-            action, _ = model.predict(obs)  
-
-            obs, reward, terminated, truncated, info = test_env.step(action)
-            episode_rewards.append(reward)
-            if (truncated):
-                break
-        if terminated:
-            success_count += 1
-    print(f"\nРезультаты за {num_episodes} эпизодов:")
-    print(f"Успешных эпизодов: {success_count}")
-    print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
-    s1 = success_count/num_episodes*100
+    s1 = eval_ac(test_env, num_episodes, model, verbose=True)
     test_ac.append(s1)
     test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, seq = True, **config)
-
     num_episodes = 200
-    success_count = 0
-    for episode in range(num_episodes):
-
-        obs, _ = test_env.reset()  
-        terminated = False
-        truncated = False
-        episode_rewards = []
-        while not terminated:
-            action, _ = model.predict(obs)  
-
-            obs, reward, terminated, truncated, info = test_env.step(action)
-            episode_rewards.append(reward)
-            if (truncated):
-                break
-        if terminated:
-            success_count += 1
-    print(f"\nРезультаты за {num_episodes} эпизодов:")
-    print(f"Успешных эпизодов: {success_count}")
-    print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
-    s1 = success_count/num_episodes*100
+    s1 = eval_ac(test_env, num_episodes, model, verbose=True)
     train_ac.append(s1)
     fig, ax = plt.subplots()
     # plt.figure(figsize=(8, 5))
@@ -119,7 +89,7 @@ def test_model(model):
     ax.set_title('Training Accuracy')
     fig.savefig(path_to_rep + "python3/fotos/train_ac.png")
     wandb.log({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
-    plt.close()
+    plt.close(fig)
     
              
 
@@ -139,7 +109,7 @@ metric_call = MetricsCallback(1)
 combined_callback = CallbackList([eval_callback, stats_callback, metric_call])
 
 
-model = train_ppo(menv, combined_callback, **config_train)
+model = train_ppo(menv, combined_callback, **config_train, model_kwargs=model_kwargs)
 
 model.save(path_to_rep + "python3/model/ppo_custom_model")
 
