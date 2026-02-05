@@ -513,9 +513,11 @@ class PushTargetEnv(PushWorldEnv):
         use_block = False,
         block_rew = 0, 
         block_peny = 0,
-        need_pddl = False
+        need_pddl = False,
+        rgb = True,
+        use_MDP = True,
     ) -> None:
-        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl)
+        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb)
         self.max_mov_ob = 0
         self.use_concentrtion = use_concentrtion
         self.max_steps = max_steps
@@ -528,6 +530,7 @@ class PushTargetEnv(PushWorldEnv):
         self.block_rew = block_rew
         self.block_peny = block_peny
         self.block = None
+        self.use_MDP = use_MDP
         if (self.use_block):
             assert(self.block_peny  >= 0)
         assert(self.loop_penalty >= 0)
@@ -632,7 +635,7 @@ class PushTargetEnv(PushWorldEnv):
         for action in range(4, len(mv_b) * 4):
             # print(action // 4)
             # print(self.current_puzzle._block[action // 4])
-            if ((st[action // 4][0], st[action // 4][1]) in self.current_puzzle._wall_collision_map[action % 4][action // 4]) or self.current_puzzle._block[action // 4]: #or self.current_puzzle._block[action // 4]
+            if ((st[action // 4][0], st[action // 4][1]) in self.current_puzzle._wall_collision_map[action % 4][action // 4]) or self.current_puzzle._block[action // 4] or not(self.use_MDP): #or self.current_puzzle._block[action // 4]
                 continue
             dx, dy = Actions.DISPLACEMENTS[action % 4]
             good = False
