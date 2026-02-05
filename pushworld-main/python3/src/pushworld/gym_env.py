@@ -95,12 +95,11 @@ class PushWorldEnv(gym.Env):
             raise ValueError("border_width must be >= 1")
         if pixels_per_cell < 3:
             raise ValueError("pixels_per_cell must be >= 3")
-
         self._max_steps = max_steps
         self._pixels_per_cell = pixels_per_cell
         self._border_width = border_width
         widths, heights = zip(*[puzzle.dimensions for puzzle in self._puzzles])
-        objs = zip(*[len(puzzle._movable_objects) for puzzle in self._puzzles])
+        objs = [len(puzzle._movable_objects) for puzzle in self._puzzles]
         self._max_objs = max(objs)
         self._max_cell_width = max(widths)
         self._max_cell_height = max(heights)
@@ -609,14 +608,6 @@ class PushTargetEnv(PushWorldEnv):
     def current_puzzle(self) -> PushWorldPuzzle or None:
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
-    
-    def add_cur_hash(self):
-        h1 = hash(self._current_state)
-        h2 = hash(tuple(self._current_puzzle._colors))
-        if (hash((h1, h2)) in self.hash_history):
-            return 1
-        self.hash_history[hash((h1, h2))] = 1
-        return 0 
 
     
     
@@ -631,6 +622,7 @@ class PushTargetEnv(PushWorldEnv):
         for a in range(4):
             av[a] = ((st[0][0], st[0][1]) not in self.current_puzzle._agent_collision_map[a])
         self.get_matrix_reachability()
+        assert self.distance is not None
         puz = self.current_puzzle
         for action in range(4, len(mv_b) * 4):
             # print(action // 4)
@@ -661,6 +653,7 @@ class PushTargetEnv(PushWorldEnv):
 
 
     def get_current_pos(self):
+        assert self._current_puzzle is not None
         pos = np.full((self.max_mov_ob, 2), -1, dtype=np.float32)
         id:int = 0
         for el in self._current_puzzle._movable_objects:
@@ -930,7 +923,6 @@ class PushTargetEnv(PushWorldEnv):
                     else:
                         info["terminal_observation"] = None
                     if (truncated):
-                        reward -= self.add_cur_hash() * self.loop_penalty
                         return self.convert(observation), rew + reward, terminated, truncated, info
                     if (tmp[1:] != self._current_state[1:]):
                         print(act)

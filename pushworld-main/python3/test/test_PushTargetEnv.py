@@ -22,7 +22,7 @@ from pushworld.rendering import savergb, create_rgb_video_opencv
 from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
 from pushworld.eval import eval_ac
-path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -84,7 +84,7 @@ def test_model(model):
     ax.set_title('Training Accuracy')
     fig.savefig(path_to_rep + "python3/fotos/train_ac.png")
     wandb.log({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
-    plt.close()
+    plt.close(fig)
     
 
 
