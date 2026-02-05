@@ -10,6 +10,7 @@ from torch_geometric.nn import RGCNConv, global_mean_pool
 class CustomCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3):
         super(CustomCNN, self).__init__(observation_space, features_dim)
+        print(in_channels)
         self.need_pddl = need_pddl
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, stride=3, padding=1),
@@ -29,8 +30,10 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.Flatten(),
         )
         
+        
         with torch.no_grad():
             cell_shape = observation_space.spaces['cell'].shape
+            print("cell_shape", cell_shape)
             sample_input = torch.rand(1, cell_shape[2], cell_shape[0], cell_shape[1])
             n_flatten = self.cnn(sample_input).shape[1]
         

@@ -29,7 +29,7 @@ block_rew:float = 0
 block_peny:float = 0
 use_block =  True
 loop_penalty = 0.05
-rgb = True
+rgb = False
 use_MDP = True
 config = {
     "use_concentrtion": use_concentrtion,
@@ -44,6 +44,7 @@ config = {
 in_channels = 3
 if not rgb:
     in_channels = 5 * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
+print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
 config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2}
@@ -137,7 +138,7 @@ metric_call = MetricsCallback(50000)
 
 combined_callback = CallbackList([eval_callback, stats_callback, metric_call])
 
-
+print(menv.observation_space)
 model = train_ppo(menv, combined_callback, **config_train, model_kwargs=model_kwargs)
 
 model.save(path_to_rep + "python3/model/ppo_custom_model")
