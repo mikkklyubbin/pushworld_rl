@@ -13,12 +13,10 @@
 # limitations under the License.
 
 import random
-from sre_constants import IN
 from typing import Any, Dict, Optional, Tuple, Union
 
 import gym
 import numpy as np
-import cv2
 import queue
 from pushworld.config import PUZZLE_EXTENSION
 from pushworld.puzzle import (
@@ -38,6 +36,28 @@ from pushworld.rendering import savergb
 INFORMATION_CHANEL_PER_OBJECT = 2 + NUM_ACTIONS
 
 INFORMATION_CHANEL_STATIC = 2
+
+def calc_pathes(good, my_pos, puz):
+    distance = np.zeros(puz.dimensions) + 1e15
+    par = np.zeros((puz.dimensions[0], puz.dimensions[1], 2))-1
+    distance[my_pos[0]][my_pos[1]] = 0
+    q = queue.Queue()
+    q.put(my_pos)
+    n = puz.dimensions[0]
+    m = puz.dimensions[1]
+    while not q.empty():
+        f = q.get()
+        x,y = f
+        for ch in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            dx = ch[0]
+            dy = ch[1]
+            if (x + dx >= 0 and x + dx < n and y + dy < m and y + dy >= 0 and distance[x + dx][y + dy] > 1 + distance[x][y] and good[x + dx][y + dy]):
+                q.put((x + dx, y + dy))
+                distance[x + dx][y + dy] = 1 + distance[x][y]
+                par[x + dx][y + dy] = (x, y)
+        
+    return (distance, par)
+
 class PushWorldEnv(gym.Env):
     """An OpenAI Gym environment for PushWorld puzzles.
 
@@ -138,7 +158,8 @@ class PushWorldEnv(gym.Env):
         # Use a fixed arbitrary seed for reproducibility of results and for
         # deterministic tests.
         self._random_generator = random.Random(123)
-
+        self.pred_static = None
+        self.static_distance = None
         self._current_puzzle = None
         self._current_state = None
         self.static_good = None
@@ -180,8 +201,6 @@ class PushWorldEnv(gym.Env):
                     dtype=np.int32
                 )
             })
-
-        print(self.observation_space)
 
     @property
     def action_space(self) -> gym.spaces.Space:
@@ -325,32 +344,61 @@ class PushWorldEnv(gym.Env):
                         good_m[i][j] = 0
                         break
         self.dynamic_good = good_m
+    def get_static_path(self):
+        if (self.pred_static is not None):
+            return
+        self.get_static_block()
+        state = self._current_state
+        my_pos = state[AGENT_IDX]
+        puz = self.current_puzzle
+        good_m = self.static_good
+        self.static_distance, self.pred_static = calc_pathes(good_m, my_pos, puz)
+
+
         
     def get_all_cells(self, ob:PushWorldObject, pos):
         dx, dy = pos
         return set((x + dx, y + dy) for x, y in ob.cells)
     
-    def get_point_to_go(self, id:int, action:int):
+    def get_point_to_go(self, id:int, action:int, distances):
         dx, dy = Actions.DISPLACEMENTS[action % 4]
-        good = False
         mv_b = self.current_puzzle.movable_objects
         st = self._current_state
         puz = self.current_puzzle
         all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, ( -dx, -dy))
         an_cells = subtract_from_points(mv_b[id].cells, (-st[id][0], -st[id][1]))
-        res = (-1, 1)
+        res = (1e12, -1, -1)
         for el in all_cells:
             for el2 in an_cells:
                 #el[0] + i = el2[0] => el2[0] - el[0] = i
                 i:int = int(el2[0] - el[0])
                 j:int  = int(el2[1] - el[1])
                 if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1]):
-                    if (self.distance[i][j] < 1e12):
-                        good = True
-                        res = (i, j)
-                        break
-            if (good):
-                break
+                    if (distances[i][j] < res[0]):
+                        res = (distances[i][j], i, j)
+        return res[1:]
+    
+    def get_interesting_points(self, id:int, action:int, distances):
+        self.get_matrix_reachability()
+        mv_b = self.current_puzzle.movable_objects
+        zz = (distances < 1e12).astype(int)
+        zz[mv_b[AGENT_IDX].position[0]][mv_b[AGENT_IDX].position[1]] = 2
+        # print(zz.T)
+        dx, dy = Actions.DISPLACEMENTS[action % 4]
+        st = self._current_state
+        puz = self.current_puzzle
+        all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, ( -dx, -dy))
+        an_cells = subtract_from_points(mv_b[id].cells, (-st[id][0], -st[id][1]))
+        res = []
+        for el in all_cells:
+            for el2 in an_cells:
+                #el[0] + i = el2[0] => el2[0] - el[0] = i
+                i:int = int(el2[0] - el[0])
+                j:int  = int(el2[1] - el[1])
+                if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1]):
+                    if (distances[i][j] < 1e12):
+                        # print(distances[i][j], i, j)
+                        res.append((i, j))
         return res
 
 
@@ -363,34 +411,9 @@ class PushWorldEnv(gym.Env):
             print(self._current_state)
         my_pos = state[AGENT_IDX]
         puz = self.current_puzzle
-        mv_b = self.current_puzzle.movable_objects
-        block = np.zeros(puz.dimensions)
         self.get_dynamic_good()
         good_m = self.dynamic_good
-        distance = np.zeros(puz.dimensions) + 1e15
-        par = np.zeros((puz.dimensions[0], puz.dimensions[1], 2))-1
-        distance[my_pos[0]][my_pos[1]] = 0
-        q = queue.Queue()
-        q.put(my_pos)
-        n = puz.dimensions[0]
-        m = puz.dimensions[1]
-        while not q.empty():
-            f = q.get()
-            x,y = f
-            for ch in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                dx = ch[0]
-                dy = ch[1]
-                if (x + dx >= 0 and x + dx < n and y + dy < m and y + dy >= 0 and distance[x + dx][y + dy] > 1 + distance[x][y] and good_m[x + dx][y + dy]):
-                    if (verbose):
-                        print((x + dx, y + dy), (x, y))
-                    q.put((x + dx, y + dy))
-                    distance[x + dx][y + dy] = 1 + distance[x][y]
-                    par[x + dx][y + dy] = (x, y)
-                    if (verbose):
-                        print(par[x + dx][y + dy])
-            
-        self.distance = distance
-        self.par = par
+        self.distance, self.par = calc_pathes(good_m, my_pos, puz)
         
     def get_obj_observation(self, id:int) -> np.ndarray:
         assert self._current_state is not None
@@ -403,15 +426,17 @@ class PushWorldEnv(gym.Env):
             for el in self.get_all_cells(self.current_puzzle._goals[id - 1], self._current_puzzle._goal_state[id - 1]):
                 res[el[0]][el[1]][1] = 1.0
         self.get_matrix_reachability()
-        x, y = self.get_point_to_go(id, 0)
         for  i in range(0, 4):
-            if (x, y) == (-1, 1):
-                x,y = self.get_point_to_go(id, i)
-        while (x != -1):
-            x, y = int(x), int(y)
-            res[x][y][2] = 1.0
-            x, y =  self.par[x][y] 
-
+            x, y = self.get_point_to_go(id, i, self.distance)
+            back = self.par
+            if (x, y) == (-1, -1):
+                self.get_static_path()
+                x,y = self.get_point_to_go(id, i, self.static_distance)
+                back = self.pred_static
+            while (x != -1):
+                x, y = int(x), int(y)
+                res[x][y][2 + i] = 1.0
+                x, y =  back[x][y] 
         return res
         
         
@@ -476,7 +501,9 @@ class PushWorldEnv(gym.Env):
         self.par = None
         self.distance = None
         self.static_good = None
-        self.dynamic_good = None 
+        self.dynamic_good = None
+        self.pred_static = None
+        self.static_distance = None
         self._current_puzzle = self._random_generator.choice(self._puzzles)
         if self.seq:
             self._current_puzzle = self._puzzles[self.curid % len(self._puzzles)]
@@ -497,7 +524,14 @@ class PushWorldEnv(gym.Env):
         observation = self.get_observation()
         return observation, info
 
-    def step(self, action: int, fast = False) -> Union[Tuple[np.ndarray, float, bool, dict], Tuple[np.ndarray, float, bool, bool, dict]]:
+    def step(
+        self,
+        action: int,
+        fast: bool = False,
+    ) -> Union[
+        Tuple[Optional[Union[np.ndarray, Dict[str, Any]]], float, bool, dict],
+        Tuple[Optional[Union[np.ndarray, Dict[str, Any]]], float, bool, bool, dict],
+    ]:
         """Implements `gym.Env.step`.
 
         The returned observation is an RGB image of the new state of the environment,
@@ -517,10 +551,6 @@ class PushWorldEnv(gym.Env):
         self._current_state = self._current_puzzle.get_next_state(
             self._current_state, action
         )
-        observation = render_observation_padded(
-            self._current_puzzle, self._current_state, self._max_cell_height, self._max_cell_width, self._pixels_per_cell, self._border_width,
-        )
-
         terminated = self._current_puzzle.is_goal_state(self._current_state)
 
         if terminated:
@@ -604,8 +634,8 @@ class PushTargetEnv(PushWorldEnv):
         need_pddl = False,
         rgb = True,
         use_MDP = True,
+        use_DIRECT = False
     ) -> None:
-        print(rgb)
         super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb)
         self.max_mov_ob = 0
         self.use_concentrtion = use_concentrtion
@@ -616,9 +646,11 @@ class PushTargetEnv(PushWorldEnv):
         self.use_block = use_block
         self.hash_history = {}
         self.loop_penalty = loop_penalty
+        self.use_DIRECT = use_DIRECT
         self.block_rew = block_rew
         self.block_peny = block_peny
         self.block = None
+        self.last_ac_is_direct = False
         self.use_MDP = use_MDP
         if (self.use_block):
             assert(self.block_peny  >= 0)
@@ -628,7 +660,8 @@ class PushTargetEnv(PushWorldEnv):
         if (max_obj is not None):
             assert max_obj >= self.max_mov_ob
             self.max_mov_ob = max_obj
-        self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS)
+        self.dir_shift = self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS
+        self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS + use_DIRECT * (self._max_cell_height + 1) * (self._max_cell_width + 1))
         boss = super().observation_space
         mat1_ob = boss["cell"] if self.pddl else boss
         #print(self._max_cell_height)
@@ -690,19 +723,55 @@ class PushTargetEnv(PushWorldEnv):
     def current_puzzle(self) -> PushWorldPuzzle or None:
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
+    
+    def move_to_point(self,x, y):
+        self.get_matrix_reachability()
+        rew = 0
+        act = self.get_action_list(x, y)
+        self.add = tuple(self._current_state)
+        # print(act)
+        self.acts += act
+        penalty = 0
 
+        for el in act:
+            tmp = tuple(self._current_state)
+            penalty += self.rec_alst_moves(el) * self.loop_penalty
+            observation, reward, terminated, truncated, info = super().step(el, fast=True)
+            if terminated or truncated:
+                info["terminal_observation"] = self.convert(observation)
+            else:
+                info["terminal_observation"] = None
+            if (truncated):
+                return self.convert(observation), rew + reward - penalty, terminated, truncated, info
+            if (tmp[1:] != self._current_state[1:]):
+                assert(False)
+            if (terminated):
+                #actions should be design, like not finish actions
+                raise LookupError
+            rew += reward
+
+        return self.convert(self.get_observation()), rew - penalty, False  , False, {}
     
     
     def get_av_act(self):
         if (self.prev_av is not None):
             return self.prev_av
+
         av = np.zeros(self.action_space.n, dtype=bool)
         mv_b = self.current_puzzle.movable_objects
         av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * 2] = self.use_concentrtion
         av[self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + 1: self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + len(mv_b)] = self.use_block
+
+        if (self.use_DIRECT and not self.last_ac_is_direct):
+            shift = self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS
+            self.get_matrix_reachability()
+            f = self.get_all_interesting(self.distance).reshape(-1)
+            av[shift: shift + f.shape[0]] = f
         st = self._current_state
         for a in range(4):
             av[a] = ((st[0][0], st[0][1]) not in self.current_puzzle._agent_collision_map[a])
+            if (self.use_DIRECT and not self.last_ac_is_direct):
+                av[a] = False
         self.get_matrix_reachability()
         assert self.distance is not None
         puz = self.current_puzzle
@@ -773,6 +842,7 @@ class PushTargetEnv(PushWorldEnv):
         self.prev_av = None
         self.hash_history = {}
         self.block = None
+        self.last_ac_is_direct = False
         # for i in range(mat1['cell'].shape[2]):
         #     print(mat1['cell'][:,:,i])
         # print(mat1["av"])
@@ -813,6 +883,7 @@ class PushTargetEnv(PushWorldEnv):
                 act.append(3)
             x, y = int(x1),int(y1)
         act.reverse()
+
         return act
     
 
@@ -855,8 +926,21 @@ class PushTargetEnv(PushWorldEnv):
         if self._current_state is None:
             raise RuntimeError("reset() must be called before step() can be called.")
         av_delta = -self.get_av_act().sum()
+        self.prev_av = None
         mv_b = self.current_puzzle.movable_objects
         prev_st = self._current_state
+        if (action >= self.dir_shift):
+            action  -= self.dir_shift
+
+            x = (action) // (self._max_cell_width + 1)
+            y = (action) % (self._max_cell_width + 1)
+            self.last_ac_is_direct = True
+
+            tmp = self.move_to_point(x, y)
+
+            return tmp
+        self.last_ac_is_direct = False
+
         if (action >= NUM_ACTIONS * self.max_mov_ob):
             self._steps += 1
             action = action - NUM_ACTIONS * self.max_mov_ob
@@ -883,7 +967,6 @@ class PushTargetEnv(PushWorldEnv):
             else:
                 info["terminal_observation"] = None
             return self.convert(observation), -0.01, terminated, truncated, info
-        self.prev_av = None
         if (action // 4 == 0):
             self.acts.append(action)
             penalty = self.rec_alst_moves(action) * self.loop_penalty
@@ -903,75 +986,17 @@ class PushTargetEnv(PushWorldEnv):
             reward -= penalty
             reward += sum(self.current_puzzle._block) * self.block_rew
             return obs, reward, terminated, truncated, info
-        dx, dy = Actions.DISPLACEMENTS[action % 4]
-        st = self._current_state
         optimal = (1e15, -1, -1)
         self.get_matrix_reachability()
-        puz = self.current_puzzle
         rew = 0
         if (action // 4 < len(mv_b)):
-            for i in range(puz.dimensions[0]):
-                for j in range(puz.dimensions[1]):
-                    all_cells = subtract_from_points(mv_b[AGENT_IDX].cells, (-i -dx, -j -dy))
-                    an_cells = subtract_from_points(mv_b[action // 4].cells, (-st[action // 4][0], -st[action // 4][1]))
-                    good:bool = False
-                    for el in all_cells:
-                        for el2 in an_cells:
-                            if (int(el[0]) == int(el2[0]) and int(el[1]) == int(el2[1])):
-                                good = True
-                                break
-                    if (good):
-                        optimal = min(optimal, (self.distance[i][j], i, j))
-            if (int(optimal[0]) < 1e12):
-                act = self.get_action_list(optimal[1], optimal[2])
-                self.add = tuple(self._current_state)
-                # print(act)
-                self.acts += act
-                penalty = 0
-                for el in act:
-                    tmp = tuple(self._current_state)
-                    penalty += self.rec_alst_moves(el) * self.loop_penalty
-                    observation, reward, terminated, truncated, info = super().step(el, fast=True)
-                    if terminated or truncated:
-                        info["terminal_observation"] = self.convert(observation)
-                    else:
-                        info["terminal_observation"] = None
-                    if (truncated):
-                        return self.convert(observation), rew + reward, terminated, truncated, info
-                    if (tmp[1:] != self._current_state[1:]):
-                        print(act)
-                        print(self.block.T)
-                        print((self.distance == 1e15).astype(np.float32).T)
-                        print(optimal[1])
-                        print(optimal[2])
-                        self.block[int(optimal[1])][int(optimal[2])] = 9
-                        print(self.block.T)
-                        x, y = optimal[1:]
-                        while (int(self.par[x][y][0]) != -1):
-                            print(x, y)
-                            x1, y1 = self.par[x][y]
-                            if (x1 < x):
-                                act.append(1)
-                            elif x1 > x:
-                                act.append(0)
-                            elif y1 > y:
-                                act.append(3)
-                            else:
-                                act.append(2)
-                            x, y = int(x1),int(y1)
-                            print(self.par[x][y])
-                            print((x,y))
-                        self.get_matrix_reachability(verbose=True)
-                        savergb(self.render(), "2.jpg")
-                        self._current_state = tmp
-                        savergb(self.render(), "1.jpg")
-                        assert(False)
-                    if (terminated):
-                        raise LookupError
-                        print("XXX")
-                    rew += reward
+            optimal = self.get_point_to_go(action // 4, action % 4, self.distance)
+            if (optimal != (-1, -1)):
+                obs, rew, terminated, truncated, info = self.move_to_point(optimal[0], optimal[1])
+                if (truncated or terminated):
+                    return obs, rew, terminated, truncated, info
                 self.acts.append(action % 4)
-                penalty += self.rec_alst_moves(action % 4) * self.loop_penalty
+                rew -= self.rec_alst_moves(action % 4) * self.loop_penalty
                 observation, reward, terminated, truncated, info = super().step(action % 4)
                 if terminated or truncated:
                     info["terminal_observation"] = self.convert(observation)
@@ -980,20 +1005,31 @@ class PushTargetEnv(PushWorldEnv):
                 obs = self.convert(observation)
                 av_delta += obs["av"].sum()
                 reward += self.new_actions_rew * av_delta
-                reward -= penalty
                 for i in range(len(prev_st)):
                     if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
                         reward -= self.block_peny
                     if (i > 0 and (self._current_state[i] != prev_st[i])):
                         self.last_moves = [0, 0, 0, 0]
                 reward += self.new_actions_rew * av_delta
-                reward += sum(self.current_puzzle._block) * self.block_rew * len(act)
+                reward += sum(self.current_puzzle._block) * self.block_rew
                 return obs, reward + rew, terminated, truncated, info
             else:
                 rew = -1
         else:
             rew = -1
         return self.gen_empty_action_res()
+    
+    def get_all_interesting(self,distances):
+        res = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1), dtype=bool)
+        #print(res.shape)
+        for i in range(NUM_ACTIONS):
+            for id in range (1, len(self.current_puzzle._movable_objects)):
+                c = self.get_interesting_points(id, i, distances)
+                for el in c:
+                    # print(el, i, id)
+                    res[el[0]][el[1]] = True
+        return res
+                
 
     def render(self, mode='rgb_array') -> np.ndarray:
         """Implements `gym.Env.render`.

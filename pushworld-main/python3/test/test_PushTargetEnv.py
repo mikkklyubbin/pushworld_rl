@@ -32,6 +32,8 @@ loop_penalty = 0.05
 rgb = False
 need_pddl = False
 use_MDP = True
+use_DIRECT = False
+max_obj = 5
 print("sss", rgb)
 config = {
     "use_concentrtion": use_concentrtion,
@@ -43,14 +45,15 @@ config = {
     "need_pddl":need_pddl,
     "to_height":11,
     "to_width":11,
-    "max_obj":5,
+    "max_obj":max_obj,
     "rgb": rgb,
     "use_MDP": use_MDP,
+    "use_DIRECT": use_DIRECT,
 }
 print(rgb)
 in_channels = 3
 if not rgb:
-    in_channels = 5 * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
+    in_channels = max_obj * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
@@ -61,7 +64,7 @@ menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, au
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
-wandb.init(project="test_", config={**config_train, **config},name="check_small_cnn+rgcn")
+wandb.init(project="test_", config={**config_train, **config},name="check_direct")
 model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []
