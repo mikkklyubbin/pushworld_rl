@@ -39,12 +39,12 @@ class CustomCNN(BaseFeaturesExtractor):
         print(in_channels)
         self.need_pddl = need_pddl
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, stride=3, padding=1),
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.BatchNorm2d(64),
-            nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
+            nn.Conv2d(64, 64, kernel_size=5, stride=2, padding=2),
             nn.ReLU(),
             nn.BatchNorm2d(64),
             nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),

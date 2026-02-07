@@ -22,7 +22,7 @@ from pushworld.rendering import savergb, create_rgb_video_opencv
 from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
 from pushworld.eval import eval_ac
-path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
+path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -32,6 +32,7 @@ loop_penalty = 0.05
 rgb = False
 need_pddl = False
 use_MDP = True
+print("sss", rgb)
 config = {
     "use_concentrtion": use_concentrtion,
     "new_actions_rew": new_actions_rew,
@@ -46,13 +47,15 @@ config = {
     "rgb": rgb,
     "use_MDP": use_MDP,
 }
+print(rgb)
 in_channels = 3
 if not rgb:
     in_channels = 5 * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 256, "batch_size": 128, "n_epochs": 10, "need_pddl":need_pddl,}
+config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,}
+print(rgb)
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
 
 
