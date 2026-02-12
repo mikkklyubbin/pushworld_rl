@@ -25,5 +25,13 @@ def get_check_k_fun(k:int):
 
 def solve_by_model(model, env:PushTargetEnv, k:int):
     env.restart()
-    for  i in range(k):
-        
+    o, i = env.get_obs_and_info()
+    o = env.convert(o)
+    rw = 0
+    for j in range(k):
+        action, _ = model.predict(o)
+        o, r, te, tr, info = env.step(action)
+        if (te or tr):
+            break
+        rw += r
+    return rw, env.current_puzzle.state
