@@ -116,7 +116,6 @@ class StatsCallback(BaseCallback):
                 self.stats_func(self.model)
 
 
-stats_callback = StatsCallback(stats_func=test_model)
 for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
     wandb.init(project="test_" + group)
     print(group)
@@ -125,6 +124,7 @@ for group in ["all", "walls", "shapes", "base", "obstacles", "goals"]:
     train_ac = []
     test_env = PushTargetEnv(f"/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/{group}/test", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True, augment = False, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05)
     train_env = PushTargetEnv(f"/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/{group}/train", 100, to_height = 11, to_width = 11, max_obj = 5, seq = True, augment = True, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05)
+    stats_callback = StatsCallback(stats_func=test_model)
     model = train_ppo(train_env, stats_callback, 1600000)
 
     num_episodes = 200

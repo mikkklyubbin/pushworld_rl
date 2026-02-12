@@ -162,6 +162,7 @@ class PushWorldPuzzle:
             )
         width = self._width = x + 2
         height = self._height = y + 2
+        self.agent_goal = None
         if (augment):
             vert = np.random.randint(0, 2)
             hor = np.random.randint(0, 2)
@@ -335,6 +336,7 @@ class PushWorldPuzzle:
     def initial_state(self) -> State:
         """The initial state from which a plan must be found to achieve the goal."""
         return self._initial_state
+    
 
     @property
     def goal_state(self) -> Tuple[Point]:
@@ -424,6 +426,8 @@ class PushWorldPuzzle:
         ):
             if entity == goal_entity:
                 count += 1
+        if (self.agent_goal is not None):
+            count += (self.agent_goal == state[0])
 
         return count
     
@@ -433,12 +437,17 @@ class PushWorldPuzzle:
             state[1 : 1 + len(self._goal_state)], self._goal_state
         ):
             res += abs((entity[0] - goal_entity[0])) + abs((entity[1] - goal_entity[1]))
+        if (self.agent_goal is not None):
+            res += abs((self.agent_goal[0] - state[0][0])) + abs((self.agent_goal[1] - state[0][1]))
         res /= 10 
         return res
+    
+    def set_agent_goal(self, pos: Point):
+        self.agent_goal = pos
         
     def is_goal_state(self, state: State) -> bool:
         """Returns whether the given state satisfies the goal of this puzzle."""
-        return state[1 : 1 + len(self._goal_state)] == self._goal_state
+        return state[1 : 1 + len(self._goal_state)] == self._goal_state and (self.agent_goal is None or self.agent_goal == state[0])
 
     def is_valid_plan(self, plan: Iterable[int]) -> bool:
         """Returns whether the sequence of actions in the plan achieves the goal,
@@ -460,11 +469,11 @@ class PushWorldPuzzle:
         return -1
     
     def concentrate(self, i:int):
-        self._colors[i] *= 10/9
+        self._colors[i] = 1
         self._colors[i] = min(1.0, self._colors[i])
         
     def deconcentrate(self, i:int):
-        self._colors[i] *= 0.9
+        self._colors[i] = 0
         self._colors[i] = max(0.0, self._colors[i])
 
     def render(

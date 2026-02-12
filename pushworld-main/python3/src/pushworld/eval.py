@@ -1,4 +1,5 @@
 def eval_ac(env, num_episodes:int, model, verbose:bool = False):
+    success_count:int = 0
     for episode in range(num_episodes):
         obs, _ = env.reset()  
         terminated = False

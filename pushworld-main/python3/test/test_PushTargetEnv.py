@@ -64,7 +64,7 @@ menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, au
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
-wandb.init(project="test_", config={**config_train, **config},name="check_direct")
+wandb.init(project="test_", config={**config_train, **config},name="clear_pushworld")
 model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []

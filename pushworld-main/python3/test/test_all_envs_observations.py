@@ -19,32 +19,32 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 from pushworld.rendering import savergb, create_rgb_video_opencv
-path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
+path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
-use_block = True
+use_block = False
 block_rew = 0.005
 block_peny = 0.1
+need_pddl = False
+rgb = False
 
 
-menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05, block_rew = block_rew, block_peny = block_peny, use_block = use_block)
+menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test/level_0_all_test_199.pwp", 100, augment = False, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05, block_rew = block_rew, block_peny = block_peny, use_block = use_block, need_pddl = need_pddl, rgb = rgb,use_MDP = True, use_DIRECT = False, max_obj = 5)
 
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
 
 o, i = menv.reset()
 rgb = menv.render()
-savergb(rgb, "/home/mikk/PushWorld/pushworld_rl/pushworld-main/python3/1.jpg")
-print(o)
+
+print(o["av"])
+savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
 while (True):
     a = int(input())
     o, r, ter, trun, info = menv.step(a)
+    assert(o in menv._observation_space)
     rgb = menv.render()
-    savergb(rgb, "/home/mikk/PushWorld/pushworld_rl/pushworld-main/python3/1.jpg")
-    # print(o)
-    print(r)
-    print(ter)
-    print(trun)
-    print(info)
+    savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
+    print(o['av'])
 
 
 
