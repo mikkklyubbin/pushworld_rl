@@ -32,7 +32,7 @@ solver = get_check_k_fun(5)
 torch.manual_seed(0)
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -61,7 +61,7 @@ config = {
     "use_DIRECT": use_DIRECT,
 }
 print(rgb)
-in_channels = 3
+in_channels = 3#0fb1149 e917652
 if not rgb:
     in_channels = max_obj * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
 print("in_channels", in_channels)
@@ -153,53 +153,44 @@ share_parameters_policy = True
 
 policy_net = torch.nn.Sequential(
     MultiAgentCNN(
-        in_
-        n_agent_outputs=2
-        * env.full_action_spec[env.action_key].shape[-1],  # 2 * n_actions_per_agents
+        in_features=env.observation_spec["agents", "observation"][0][0].shape[-1],
+        n_agent_outputs=env.full_action_spec[env.action_key].space.n, 
         n_agents=env.n_agents,
         centralised=False,  # the policies are decentralised (ie each agent will act from its observation)
         share_params=share_parameters_policy,
         kernel_size=3,
-        num_cells=[32, 256, 256]
+        num_cells=[32, 256, 256],
         device=device,
-        depth=2,
-        num_cells=256,
         activation_class=torch.nn.Tanh,
-    ),
-    NormalParamExtractor(),  # this will just separate the last dimension into two outputs: a loc and a non-negative scale
+    )
 )
 
 policy_module = TensorDictModule(
     policy_net,
     in_keys=[("agents", "observation")],
-    out_keys=[("agents", "loc"), ("agents", "scale")],
+    out_keys=[("agents", "logits")],
 )
 policy = ProbabilisticActor(
     module=policy_module,
     spec=env.action_spec_unbatched,
-    in_keys=[("agents", "loc"), ("agents", "scale")],
+    in_keys=[("agents", "logits")],
     out_keys=[env.action_key],
-    distribution_class=TanhNormal,
-    distribution_kwargs={
-        "low": env.full_action_spec_unbatched[env.action_key].space.low,
-        "high": env.full_action_spec_unbatched[env.action_key].space.high,
-    },
+    distribution_class=torch.distributions.Categorical,
     return_log_prob=True,
 )
 
 share_parameters_critic = True
 mappo = True  # IPPO if False
 
-critic_net = MultiAgentMLP(
-    n_agent_inputs=env.observation_spec["agents", "observation"].shape[-1],
-    n_agent_outputs=1,  # 1 value per agent
-    n_agents=env.n_agents,
-    centralised=mappo,
-    share_params=share_parameters_critic,
-    device=device,
-    depth=2,
-    num_cells=256,
-    activation_class=torch.nn.Tanh,
+critic_net = MultiAgentCNN(
+        in_features=env.observation_spec["agents", "observation"][0][0].shape[-1],
+        n_agent_outputs=1,
+        n_agents=env.n_agents,
+        centralised=False,  # the policies are decentralised (ie each agent will act from its observation)
+        share_params=share_parameters_critic,
+        kernel_size=3,
+        num_cells=[32, 256, 256],
+        device=device,
 )
 
 critic = TensorDictModule(
@@ -211,7 +202,7 @@ critic = TensorDictModule(
 collector = SyncDataCollector(
     env,
     policy,
-    device=vmas_device,
+    device=env_device,
     storing_device=device,
     frames_per_batch=frames_per_batch,
     total_frames=total_frames,

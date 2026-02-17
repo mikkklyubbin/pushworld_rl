@@ -134,12 +134,3 @@ class MultiAgentPushTargetEnv(EnvBase):
     
 def stupid_solver(env):
     return 0, env._current_state
-
-
-tf = MultiAgentPushTargetEnv(PushTargetEnv("/home/mik/hse/Pushworld/pushworld-main/benchmark/puzzles/level0/all/test/level_0_all_test_199.pwp", 100, rgb=False, use_concentrtion=False, use_MDP=False), stupid_solver)
-
-print(tf.action_keys)
-print(tf.reward_keys)
-print(tf.observation_keys)
-print(tf.done_keys)
-check_env_specs(tf)
