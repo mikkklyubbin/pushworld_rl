@@ -52,19 +52,20 @@ config = {
 }
 print(rgb)
 in_channels = 3
+menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
 if not rgb:
-    in_channels = max_obj * INFORMATION_CHANEL_PER_OBJECT + INFORMATION_CHANEL_STATIC # change 5 to max obj locally
+    in_channels = menv.all_chanells
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
 config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,}
 print(rgb)
-menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
+
 
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
-wandb.init(project="test_", config={**config_train, **config},name="clear_pushworld")
+wandb.init(project="test_", config={**config_train, **config},name="plus_history")
 model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []

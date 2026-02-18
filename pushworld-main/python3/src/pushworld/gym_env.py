@@ -14,8 +14,8 @@
 
 import random
 from typing import Any, Dict, Optional, Tuple, Union
-
 import gym
+from gym.wrappers import FrameStack
 import numpy as np
 import queue
 from pushworld.config import PUZZLE_EXTENSION
@@ -33,7 +33,9 @@ from pushworld.puzzle import (
 from pushworld.utils.env_utils import get_max_puzzle_dimensions, render_observation_padded
 from pushworld.utils.filesystem import iter_files_with_extension
 from pushworld.rendering import savergb
-INFORMATION_CHANEL_PER_OBJECT = 2 + NUM_ACTIONS
+HISTORY_PER_OBJ = 1
+INFORMATION_CHANEL_PER_OBJECT = 2 + NUM_ACTIONS + HISTORY_PER_OBJ
+HISTORY_STACK = 3
 
 INFORMATION_CHANEL_STATIC = 2
 
@@ -164,6 +166,7 @@ class PushWorldEnv(gym.Env):
         self._current_state = None
         self.static_good = None
         self.dynamic_good = None
+        self.stack = None
         self.rgb = rgb
         self._action_space = gym.spaces.Discrete(NUM_ACTIONS)
         cells_space = gym.spaces.Box(
@@ -174,20 +177,23 @@ class PushWorldEnv(gym.Env):
             ).shape,
             dtype=np.float32,
         )
+        self.all_chanells = 3
         if not self.rgb:
+            self.chanels_per_obs = (INFORMATION_CHANEL_STATIC + INFORMATION_CHANEL_PER_OBJECT * self._max_objs)
+            self.all_chanells = self.chanels_per_obs * HISTORY_STACK
             print("Using non-rgb observation space")
             h,w  = self._max_cell_height + 1, self._max_cell_width + 1
             cells_space = gym.spaces.Box(
                 low=0.0, high=1.0,
-                shape=(h,w, INFORMATION_CHANEL_STATIC + INFORMATION_CHANEL_PER_OBJECT * self._max_objs), dtype=np.float32
+                shape=(h,w, self.all_chanells), dtype=np.float32
             )
             self.agent_observation_space = gym.spaces.Box(
                 low=0.0, high=self._max_objs,
-                shape=(h,w, INFORMATION_CHANEL_STATIC + INFORMATION_CHANEL_PER_OBJECT * (self._max_objs + 1) + 2), dtype=np.float32
+                shape=(h,w, self.all_chanells  + INFORMATION_CHANEL_PER_OBJECT + 2), dtype=np.float32
             )
             self.global_observation_space = gym.spaces.Box(
                 low=0.0, high=self._max_objs,
-                shape=(h,w, INFORMATION_CHANEL_STATIC + INFORMATION_CHANEL_PER_OBJECT * self._max_objs + 1), dtype=np.float32
+                shape=(h,w, self.all_chanells + 1), dtype=np.float32
             )
         self._observation_space = cells_space
         if (self.pddl):
@@ -209,6 +215,7 @@ class PushWorldEnv(gym.Env):
                     dtype=np.int32
                 )
             })
+        self.obj_pathes = None
 
     def set_goals(self, goals):
         self.current_puzzle._goal_state = goals[1:]
@@ -220,7 +227,10 @@ class PushWorldEnv(gym.Env):
         self.pred_static = None
         self.distance = None
         self.par = None
+        self.prev_av = None
+        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
         self._steps = 0
+        self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
 
     def collect_multy_agent_data(self, positions, n_agents):
         s = self.get_observation()
@@ -484,6 +494,7 @@ class PushWorldEnv(gym.Env):
                 x, y = int(x), int(y)
                 res[x][y][2 + i] = 1.0
                 x, y =  back[x][y] 
+        res[:, :, 2 + NUM_ACTIONS] = self.obj_pathes[:,:, id]
         return res
         
         
@@ -503,6 +514,8 @@ class PushWorldEnv(gym.Env):
                     observation[el[0]][el[1]][0] = 1.0
                 observation = np.concatenate((observation, self.get_obj_observation(i)), axis=2)
             observation = np.concatenate((observation, np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, INFORMATION_CHANEL_PER_OBJECT * (self._max_objs - len(self.current_puzzle._movable_objects))), dtype=np.float32)), axis=2)
+            self.stack = np.concatenate((observation, self.stack[:, :, :self.chanels_per_obs * (HISTORY_STACK - 1)]),axis=2)
+            observation = self.stack
         if (self.pddl):
             gr  =  self.get_relations_graph()
             return {
@@ -552,6 +565,7 @@ class PushWorldEnv(gym.Env):
         self.pred_static = None
         self.static_distance = None
         self._current_puzzle = self._random_generator.choice(self._puzzles)
+        self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
         if self.seq:
             self._current_puzzle = self._puzzles[self.curid % len(self._puzzles)]
             self.curid += 1
@@ -560,7 +574,7 @@ class PushWorldEnv(gym.Env):
             self._current_state
         )
         self._steps = 0
-
+        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
         return self.get_obs_and_info()
     
     def get_obs_and_info(self):
@@ -577,6 +591,10 @@ class PushWorldEnv(gym.Env):
         self.pred_static = None
         self.distance = None
         self.par = None
+        self.prev_av = None
+        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
+        self._steps = 0
+        self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
 
     def step(
         self,
@@ -637,6 +655,9 @@ class PushWorldEnv(gym.Env):
             self.par = None
             self.static_distance = None
             self.pred_static = None
+        for i in range(len(self._current_state)):
+            x,y = self._current_state[i]
+            self.obj_pathes[x][y][i] = 1
         if (fast and not terminated and not truncated):
             return None, reward, terminated, truncated, info
         observation = self.get_observation()

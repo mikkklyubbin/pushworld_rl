@@ -17,7 +17,7 @@
 #ifndef HEURISTICS_HEURISTIC_H_
 #define HEURISTICS_HEURISTIC_H_
 
-#include "pushworld_puzzle.h"
+#include "/home/mik/hse/Pushworld/pushworld-main/cpp/include/pushworld_puzzle.h"
 
 namespace pushworld {
 namespace heuristic {

@@ -16,7 +16,7 @@
 #include <memory>
 #include <optional>
 
-#include "heuristics/novelty.h"
+#include "/home/mik/hse/Pushworld/pushworld-main/cpp/include/heuristics/novelty.h"
 #include "heuristics/recursive_graph_distance.h"
 #include "heuristics/weighted_sum.h"
 #include "pushworld_puzzle.h"
