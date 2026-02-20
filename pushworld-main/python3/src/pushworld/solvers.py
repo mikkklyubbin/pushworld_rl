@@ -22,7 +22,6 @@ def get_check_k_fun(k:int):
         return max_res
     return check_all_actions
 
-
 def solve_by_model(model, env:PushTargetEnv, k:int):
     env.restart()
     o, i = env.get_obs_and_info()

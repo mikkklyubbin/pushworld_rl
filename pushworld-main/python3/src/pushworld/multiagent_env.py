@@ -8,8 +8,18 @@ from torchrl.data import (
     UnboundedContinuous,
 )
 import torch
+import torch.nn as nn
 from torchrl.envs.utils import check_env_specs
 from pushworld.gym_env import PushTargetEnv
+
+class Permute(nn.Module):
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, x):
+        dims = list(range(x.dim()))
+        dims[-1], dims[-2], dims[-3] = dims[-2], dims[-3], dims[-1]
+        return x.permute(*dims)
 class MultiAgentPushTargetEnv(EnvBase):
     def __init__(self, env : PushTargetEnv, solver, device="cpu", batch_size=[]):
         super().__init__(device=device, batch_size=batch_size)
@@ -78,7 +88,7 @@ class MultiAgentPushTargetEnv(EnvBase):
         global_data = self.env.get_global_ma_data(self.positions)
 
         self.borders = []
-        for i in range(self.n_agents):
+        for i in range(len(self.env.current_puzzle._movable_objects)):
             self.borders.append([100000, -100000, 100000, -100000])
             for el in self.env.current_puzzle._movable_objects[i].cells:
                 self.borders[-1][0] = min(self.borders[-1][0], el[0])
@@ -97,7 +107,7 @@ class MultiAgentPushTargetEnv(EnvBase):
     
     def _step(self, tensordict):
         actions = tensordict[("agents", "action")]
-        reward = torch.zeros(self.n_agents, 1)
+        reward = torch.zeros(self.n_agents)
         for i, act in enumerate(actions):
             if (i >= len(self.env.current_puzzle._movable_objects)):
                 break
@@ -111,7 +121,7 @@ class MultiAgentPushTargetEnv(EnvBase):
                 self.positions[i][0] = min(self.positions[i][0] + 1, self.env._max_cell_width - 1)
             dlt = self.calc_cur_f() - self.cur
             self.cur += dlt
-            reward[i, 0] = dlt
+            reward[i] = dlt
         self.step_count += 1
         truncated = torch.full((self.n_agents, 1), self.step_count >= self.max_steps, dtype=torch.bool)
         terminated = torch.full((self.n_agents, 1), False, dtype=torch.bool)
