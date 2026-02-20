@@ -1,5 +1,5 @@
 import torch
-
+import torchrl
 # Tensordict modules
 from tensordict.nn import set_composite_lp_aggregate, TensorDictModule
 from tensordict.nn.distributions import NormalParamExtractor
@@ -15,10 +15,10 @@ from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from torchrl.envs import RewardSum, TransformedEnv
 from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.utils import check_env_specs
-from pushworld.multiagent_env import MultiAgentPushTargetEnv
+from pushworld.multiagent_env import MultiAgentPushTargetEnv, Permute
 from pushworld.gym_env import PushTargetEnv
 from pushworld.solvers import get_check_k_fun, solve_by_model
-from torchrl.modules import MultiAgentCNN
+from torchrl.modules import MultiAgentConvNet
 from pushworld.eval import eval_ac
 # Multi-agent network
 from torchrl.modules import MultiAgentMLP, ProbabilisticActor, TanhNormal
@@ -147,22 +147,25 @@ env = TransformedEnv(
     env,
     RewardSum(in_keys=[env.reward_key], out_keys=[("agents", "episode_reward")]),
 )
-
-check_env_specs(env)
+print(env.rollout(3)[("agents", "observation")].shape)
 share_parameters_policy = True
 
 policy_net = torch.nn.Sequential(
-    MultiAgentCNN(
-        in_features=env.observation_spec["agents", "observation"][0][0].shape[-1],
-        n_agent_outputs=env.full_action_spec[env.action_key].space.n, 
+    Permute(),
+    MultiAgentConvNet(
+        in_features=env.observation_spec["agents", "observation"][0][0].shape[-1], 
         n_agents=env.n_agents,
         centralised=False,  # the policies are decentralised (ie each agent will act from its observation)
         share_params=share_parameters_policy,
-        kernel_size=3,
+        kernel_sizes=3,
         num_cells=[32, 256, 256],
         device=device,
+        paddings=[1,1,1],
         activation_class=torch.nn.Tanh,
-    )
+    ),
+    torch.nn.AdaptiveAvgPool2d(1),
+    torch.nn.Flatten(start_dim=-3),
+    torch.nn.Linear(256, env.full_action_spec[env.action_key].space.n)
 )
 
 policy_module = TensorDictModule(
@@ -170,6 +173,7 @@ policy_module = TensorDictModule(
     in_keys=[("agents", "observation")],
     out_keys=[("agents", "logits")],
 )
+
 policy = ProbabilisticActor(
     module=policy_module,
     spec=env.action_spec_unbatched,
@@ -182,15 +186,21 @@ policy = ProbabilisticActor(
 share_parameters_critic = True
 mappo = True  # IPPO if False
 
-critic_net = MultiAgentCNN(
+critic_net = torch.nn.Sequential(
+    Permute(),
+    MultiAgentConvNet(
         in_features=env.observation_spec["agents", "observation"][0][0].shape[-1],
-        n_agent_outputs=1,
         n_agents=env.n_agents,
         centralised=False,  # the policies are decentralised (ie each agent will act from its observation)
         share_params=share_parameters_critic,
-        kernel_size=3,
+        kernel_sizes=3,
         num_cells=[32, 256, 256],
+        paddings=[1,1,1],
         device=device,
+),
+    torch.nn.AdaptiveAvgPool2d(1),
+    torch.nn.Flatten(start_dim=-3),
+    torch.nn.Linear(256, 1)                           
 )
 
 critic = TensorDictModule(
