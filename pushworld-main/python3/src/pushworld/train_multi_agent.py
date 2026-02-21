@@ -17,12 +17,14 @@ from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.utils import check_env_specs
 from pushworld.multiagent_env import MultiAgentPushTargetEnv, Permute
 from pushworld.gym_env import PushTargetEnv
-from pushworld.solvers import get_check_k_fun, solve_by_model
+from pushworld.solvers import get_check_k_fun, get_solver_by_model
 from torchrl.modules import MultiAgentConvNet
+from tensordict import TensorDict
 from pushworld.eval import eval_ac
 # Multi-agent network
 from torchrl.modules import MultiAgentMLP, ProbabilisticActor, TanhNormal
 import wandb
+from pushworld.load_model import load_PPO_model
 # Loss
 from torchrl.objectives import ClipPPOLoss, ValueEstimators
 from pushworld.callbacks import StatsCallback, MetricsCallback
@@ -32,7 +34,7 @@ solver = get_check_k_fun(5)
 torch.manual_seed(0)
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
+path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -115,15 +117,16 @@ device = (
     else torch.device("cpu")
 )
 env_device = "cpu"  # The device where the simulator is run (VMAS can run on GPU)
+print(device)
 
 # Sampling
-frames_per_batch = 6_000  # Number of team frames collected per training iteration
+frames_per_batch = 6000  # Number of team frames collected per training iteration
 n_iters = 5  # Number of sampling and training iterations
 total_frames = frames_per_batch * n_iters
 
 # Training
 num_epochs = 30  # Number of optimization steps per training iteration
-minibatch_size = 400  # Size of the mini-batches in each optimization step
+minibatch_size = 100  # Size of the mini-batches in each optimization step
 lr = 3e-4  # Learning rate
 max_grad_norm = 1.0  # Maximum norm for the gradients
 
@@ -140,14 +143,24 @@ num_vmas_envs = (
     frames_per_batch // max_steps
 )  # Number of vectorized envs. frames_per_batch should be divisible by this number
 n_agents = 5
-
+model_for_solver = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip")
+solver = get_solver_by_model(model_for_solver, 10)
 env = MultiAgentPushTargetEnv(menv, solver, device=env_device)
 
 env = TransformedEnv(
     env,
     RewardSum(in_keys=[env.reward_key], out_keys=[("agents", "episode_reward")]),
 )
-print(env.rollout(3)[("agents", "observation")].shape)
+td = env.reset()
+done = False
+step = 0
+while not done and step < 100:
+    actions = torch.randint(0, 4, (env.n_agents,))
+    td = env.step(TensorDict({"agents": {"action": actions}}, batch_size=[]))
+    print(td)
+    done = td["next"]["done"].all()
+    step += 1
+print("Episode finished.")
 share_parameters_policy = True
 
 policy_net = torch.nn.Sequential(
@@ -163,10 +176,9 @@ policy_net = torch.nn.Sequential(
         paddings=[1,1,1],
         activation_class=torch.nn.Tanh,
     ),
-    torch.nn.AdaptiveAvgPool2d(1),
-    torch.nn.Flatten(start_dim=-3),
-    torch.nn.Linear(256, env.full_action_spec[env.action_key].space.n)
+    torch.nn.Linear(1024, env.full_action_spec[env.action_key].space.n, device = device),
 )
+print(env.full_action_spec[env.action_key].space.n)
 
 policy_module = TensorDictModule(
     policy_net,
@@ -198,9 +210,8 @@ critic_net = torch.nn.Sequential(
         paddings=[1,1,1],
         device=device,
 ),
-    torch.nn.AdaptiveAvgPool2d(1),
-    torch.nn.Flatten(start_dim=-3),
-    torch.nn.Linear(256, 1)                           
+    torch.nn.Linear(1024, 1,device=device),
+    torch.nn.Flatten(start_dim =-2)                           
 )
 
 critic = TensorDictModule(
@@ -240,6 +251,7 @@ loss_module.set_keys(  # We have to tell the loss where to find the keys
     # These last 2 keys will be expanded to match the reward shape
     done=("agents", "done"),
     terminated=("agents", "terminated"),
+    sample_log_prob=("agents", "action_log_prob"),
 )
 
 
@@ -254,18 +266,18 @@ pbar = tqdm(total=n_iters, desc="episode_reward_mean = 0")
 
 episode_reward_mean_list = []
 for tensordict_data in collector:
+    print("hdwh")
     tensordict_data.set(
         ("next", "agents", "done"),
         tensordict_data.get(("next", "done"))
-        .unsqueeze(-1)
-        .expand(tensordict_data.get_item_shape(("next", env.reward_key))),
+        .squeeze(-1),
     )
     tensordict_data.set(
         ("next", "agents", "terminated"),
         tensordict_data.get(("next", "terminated"))
-        .unsqueeze(-1)
-        .expand(tensordict_data.get_item_shape(("next", env.reward_key))),
+        .squeeze(-1)
     )
+    tensordict_data = tensordict_data.to(device)
     # We need to expand the done and terminated to match the reward shape (this is expected by the value estimator)
 
     with torch.no_grad():
@@ -274,7 +286,8 @@ for tensordict_data in collector:
             params=loss_module.critic_network_params,
             target_params=loss_module.target_critic_network_params,
         )  # Compute GAE and add it to the data
-
+    adv = tensordict_data.get("advantage")
+    tensordict_data.set("advantage", adv.unsqueeze(-1))
     data_view = tensordict_data.reshape(-1)  # Flatten the batch size to shuffle data
     replay_buffer.extend(data_view)
 

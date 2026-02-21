@@ -106,6 +106,7 @@ class MultiAgentPushTargetEnv(EnvBase):
         return out
     
     def _step(self, tensordict):
+        assert(self.max_steps > self.step_count)
         actions = tensordict[("agents", "action")]
         reward = torch.zeros(self.n_agents)
         for i, act in enumerate(actions):
