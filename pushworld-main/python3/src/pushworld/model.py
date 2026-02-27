@@ -7,6 +7,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO, DQN
 from torch_geometric.nn import RGCNConv, global_mean_pool
+from sb3_contrib import RecurrentPPO
 class RGCN_ML(torch.nn.Module):
     def __init__(self, num_layers = 10, features_dim = 128, hidden_dim = 64, outpu_dim = 64, num_relationships = 10):
         super().__init__()
@@ -259,4 +260,68 @@ def train_dqn(env, callback, total_timesteps=60000000, need_pddl = False, node_f
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     model.learn(total_timesteps=total_timesteps, callback= callback)
+    return model
+
+
+from sb3_contrib.common.recurrent.policies import RecurrentActorCriticPolicy
+from stable_baselines3.common.torch_layers import create_mlp
+from stable_baselines3.common.distributions import make_proba_distribution
+from sb3_contrib.common.recurrent.type_aliases import RNNStates
+class CustomRecurrentPolicy(RecurrentActorCriticPolicy):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_mask = None  # временное хранилище для маски
+
+    def _get_action_dist_from_latent(self, latent_policy):
+        dist = super()._get_action_dist_from_latent(latent_policy)
+
+        if self._last_mask is not None:
+            mask = self._last_mask
+            if isinstance(mask, np.ndarray):
+                mask = torch.tensor(mask, dtype=torch.float32, device=latent_policy.device)
+            else:
+                mask = mask.to(dtype=torch.float32, device=latent_policy.device)
+            logits_shape = dist.distribution.logits.shape
+            if mask.shape != logits_shape:
+                if mask.dim() == 1:
+                    mask = mask.unsqueeze(1).expand(-1, logits_shape[1])
+                else:
+                    raise ValueError(f"Mask shape {mask.shape} не совместим с logits shape {logits_shape}")
+            modified_logits = dist.distribution.logits.clone()
+            modified_logits = modified_logits - (1 - mask) * 1e9
+            dist.distribution = torch.distributions.Categorical(logits=modified_logits)
+
+        return dist
+
+    def forward(self, obs, lstm_states, episode_starts, deterministic=False):
+        self._last_mask = obs["av"]
+        return super().forward(obs, lstm_states, episode_starts, deterministic)
+
+    def evaluate_actions(self, obs, actions, lstm_states, episode_starts):
+        self._last_mask = obs["av"]
+        return super().evaluate_actions(obs, actions, lstm_states, episode_starts)
+
+
+def train_rec_PPO(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}):
+    policy_kwargs = dict(
+        features_extractor_class=CustomCNN,
+        features_extractor_kwargs=dict(
+            features_dim=features_dim,
+            need_pddl=need_pddl,
+            node_feature=node_feature,
+            hidden_dim=hidden_dim,
+            **model_kwargs
+        ),
+        net_arch=[512, 256],         
+        lstm_hidden_size=256,         
+        activation_fn=torch.nn.ReLU   
+    )
+
+    model = RecurrentPPO(
+        policy=CustomRecurrentPolicy,
+        env=env,
+        policy_kwargs=policy_kwargs,
+        verbose=1
+    )
+    model.learn(total_timesteps=total_timesteps, callback=callback)
     return model
