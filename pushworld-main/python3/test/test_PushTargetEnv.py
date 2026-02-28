@@ -63,7 +63,7 @@ print(rgb)
 
 
 
-eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
+eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
 wandb.init(project="test_", config={**config_train, **config},name="plus_history")
 model_save_path = path_to_rep + "python3/model/bst2"
@@ -72,7 +72,7 @@ test_ac = []
 train_ac = []
 
 def test_model(model):
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100,  **config)
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, seq =True,  **config)
 
     num_episodes = 200
     s1 = eval_ac(test_env, num_episodes, model, verbose=True)

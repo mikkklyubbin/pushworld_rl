@@ -9,6 +9,8 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO
 from pushworld.gym_env import PushTargetEnv, INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
 from rendering import create_rgb_video_opencv, savergb
+from pushworld.load_model import load_PPO_model
+from pushworld.eval import eval_ac
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -17,8 +19,8 @@ use_block =  False
 loop_penalty = 0.05
 rgb = False
 need_pddl = False
-use_MDP = False
-use_DIRECT = True
+use_MDP = True
+use_DIRECT = False
 max_obj = 5
 
 config = {
@@ -41,29 +43,14 @@ if not rgb:
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "need_pddl":need_pddl, **model_kwargs}
-policy_kwargs = dict(
-    features_extractor_class=CustomCNN,
-    features_extractor_kwargs=config_train,
-    net_arch=dict(pi=[512, 256], vf=[512, 256])
-)
-
-model_save_path = "/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip"
-model = PPO.load(
-    model_save_path,
-    custom_objects={
-        "policy_class": CustomPolicy,
-        "policy_kwargs": policy_kwargs
-    },
-    device='cuda' if torch.cuda.is_available() else 'cpu'
-)
-model_kwargs = {"in_channels": in_channels}
-
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,}
+model = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip")
+print(model.policy)
+# print(model.observation_space)
+# model.eval()
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
-for group in ["all"]:
+for group in ["all", "base", "walls", "shapes", "obstacles", "goals"]:
     print(group)
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100,seq=True, **config)
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/{group}/test", 100,seq=True, **config)
     num_episodes = 200
     success_count = 0
     for episode in range(num_episodes):
@@ -87,7 +74,7 @@ for group in ["all"]:
             success_count += 1
         #savergb(test_env.render(), "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
         res = test_env.render_acts()
-        create_rgb_video_opencv(res, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/check" + str(episode % 10) + ".avi")
+        # create_rgb_video_opencv(res, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/check" + str(episode % 10) + ".avi")
     print(f"\nРезультаты за {num_episodes} эпизодов:")
     print(f"Успешных эпизодов: {success_count}")
     print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")

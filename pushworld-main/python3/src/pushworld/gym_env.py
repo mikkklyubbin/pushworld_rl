@@ -35,7 +35,7 @@ from pushworld.utils.filesystem import iter_files_with_extension
 from pushworld.rendering import savergb
 HISTORY_PER_OBJ = 1
 INFORMATION_CHANEL_PER_OBJECT = 2 + NUM_ACTIONS + HISTORY_PER_OBJ
-HISTORY_STACK = 3
+HISTORY_STACK = 1
 
 INFORMATION_CHANEL_STATIC = 2
 
@@ -136,6 +136,8 @@ class PushWorldEnv(gym.Env):
         if max_obj is not None:
             assert max_obj >= self._max_objs
             self._max_objs = max_obj
+        print(self._max_objs)
+        print(max_obj)
         if standard_padding:
             standard_cell_height, standard_cell_width = get_max_puzzle_dimensions()
 
@@ -713,7 +715,7 @@ class PushTargetEnv(PushWorldEnv):
         use_MDP = True,
         use_DIRECT = False
     ) -> None:
-        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb)
+        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb, max_obj=max_obj)
         self.max_mov_ob = 0
         self.use_concentrtion = use_concentrtion
         self.max_steps = max_steps

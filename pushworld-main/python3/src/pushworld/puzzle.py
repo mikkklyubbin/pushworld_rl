@@ -406,10 +406,11 @@ class PushWorldPuzzle:
 
         next_state = list(state)
         displacement = Actions.DISPLACEMENTS[action]
-        next_state[0] = tuple(displacement + state[0])
+        displacement = tuple(int(x) for x in displacement)
+        next_state[0] = tuple(displacement[i] + state[0][i] for i in range(2))
         for i in range(1, self.num_movables):
             if self._pushed_objects[i]:
-                next_state[i] = tuple(displacement + state[i])
+                next_state[i] = tuple(displacement[j] + state[i][j] for j in range(2))
                 self._pushed_objects[i] = False
             else:
                 next_state[i] = state[i]
