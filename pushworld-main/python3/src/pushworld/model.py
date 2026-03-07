@@ -270,8 +270,17 @@ from sb3_contrib.common.recurrent.type_aliases import RNNStates
 class CustomRecurrentPolicy(RecurrentActorCriticPolicy):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._last_mask = None  # временное хранилище для маски
+        self._last_mask = None
 
+
+    def _predict(
+        self,
+        observation,
+        lstm_states,
+        episode_starts,
+        deterministic=False):
+        self._last_mask = observation["av"]
+        return super()._predict(observation, lstm_states, episode_starts, deterministic)
     def _get_action_dist_from_latent(self, latent_policy):
         dist = super()._get_action_dist_from_latent(latent_policy)
 
@@ -325,3 +334,36 @@ def train_rec_PPO(env, callback, total_timesteps=60000000, need_pddl = False, no
     )
     model.learn(total_timesteps=total_timesteps, callback=callback)
     return model
+
+class Decoder(torch.nn.Module):
+    def __init__(self, latent_dim, size, taget_channels):
+        self.lat = latent_dim
+        super().__init__()
+        print("size", size)
+        self.deconv_layers = nn.Sequential(
+            nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Upsample(size, mode='bilinear', align_corners=False),
+            nn.Conv2d(32, taget_channels, kernel_size=3, padding=1),
+            nn.Sigmoid(),
+        )
+    def forward(self, x):
+        x = x.reshape(-1, self.lat, 1, 1)
+        return self.deconv_layers(x)
+
+class ResultPredictor(torch.nn.Module):
+    def __init__(self, train_config, obs_space, num_actions, target_shape, target_channels = 1):
+        super().__init__()
+        self.enc = CustomCNN(obs_space, **train_config)
+        self.mixer = nn.Sequential(nn.Linear(num_actions + train_config["features_dim"], train_config["features_dim"]), nn.ReLU())
+        self.dec = Decoder(train_config["features_dim"], target_shape[-3:-1], target_channels)
+    def forward(self, x, a):
+        x = self.enc(x)
+        a = F.one_hot(a, num_classes=self.mixer[0].in_features - x.shape[1]).float()
+        x = self.mixer(torch.cat([x, a], dim=-1))
+        x = self.dec(x)
+        return x
