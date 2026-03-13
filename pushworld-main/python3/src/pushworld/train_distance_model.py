@@ -69,12 +69,12 @@ config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512,  "ne
 print(menv._observation_space["cell"].shape[0])
 model = ResultPredictor(config_train, menv._observation_space, menv._action_space.n, menv._observation_space["cell"].shape[0:3])
 
-num_epochs = 100
+num_epochs = 10
 for j in  range(num_epochs):
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0003)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     criterion = nn.MSELoss()
-    obs_batch, act_batch, targets = get_fix_len_roll(menv, 100)
+    obs_batch, act_batch, targets = get_fix_len_roll(menv, 200)
     for j in range(10):
         optimizer.zero_grad()
         pred = model(obs_batch, act_batch)
@@ -82,6 +82,7 @@ for j in  range(num_epochs):
         loss.backward()
         optimizer.step()
         print(loss.item())
-    
 
+save_path = path_to_rep + "python3/model/distance_model"
+torch.save(model.enc.state_dict(), save_path)
     

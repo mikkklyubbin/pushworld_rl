@@ -35,7 +35,7 @@ class RGCN_ML(torch.nn.Module):
         return x
 
 class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3, num_layers = 10):
+    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3, num_layers = 10, copy_from = None):
         super(CustomCNN, self).__init__(observation_space, features_dim)
         print(in_channels)
         self.need_pddl = need_pddl
@@ -95,6 +95,12 @@ class CustomCNN(BaseFeaturesExtractor):
                 nn.ReLU(),
                 nn.LayerNorm(features_dim)
             )
+        if copy_from is not None:
+            self.load_state_dict(copy_from)
+            for param in self.cnn[0].parameters():
+                param.requires_grad = False
+            for param in self.cnn[1].parameters():
+                param.requires_grad = False
 
         
     def forward(self, observations):
@@ -330,7 +336,11 @@ def train_rec_PPO(env, callback, total_timesteps=60000000, need_pddl = False, no
         policy=CustomRecurrentPolicy,
         env=env,
         policy_kwargs=policy_kwargs,
-        verbose=1
+        verbose=1, 
+        batch_size = 300,
+        n_epochs = n_epochs,
+        n_steps = 1800,
+
     )
     model.learn(total_timesteps=total_timesteps, callback=callback)
     return model

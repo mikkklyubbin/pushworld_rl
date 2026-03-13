@@ -8,6 +8,8 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO
 from pushworld.gym_env import PushTargetEnv, INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
+from pushworld.model import CustomCNN, CustomPolicy, train_ppo, train_rec_PPO, CustomRecurrentPolicy
+from sb3_contrib import RecurrentPPO
 from rendering import create_rgb_video_opencv, savergb
 def load_PPO_model(model_save_path):
     path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
@@ -56,6 +58,34 @@ def load_PPO_model(model_save_path):
         model_save_path,
         custom_objects={
             "policy_class": CustomPolicy,
+            "policy_kwargs": policy_kwargs
+        },
+        device='cuda' if torch.cuda.is_available() else 'cpu'
+    )
+    return model
+
+def load_PPO_REC(model_save_path, config):
+    path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+    rgb = config["rgb"]
+    need_pddl = config["need_pddl"]
+    in_channels = 3
+    menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
+    if not rgb:
+        in_channels = menv.all_chanells
+    print("in_channels", in_channels)
+    model_kwargs = {"in_channels": in_channels}
+
+    config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "need_pddl":need_pddl, **model_kwargs}
+    policy_kwargs = dict(
+        features_extractor_class=CustomCNN,
+        features_extractor_kwargs=config_train,
+        net_arch=dict(pi=[512, 256], vf=[512, 256])
+    )
+
+    model = RecurrentPPO.load(
+        model_save_path,
+        custom_objects={
+            "policy_class": CustomRecurrentPolicy,
             "policy_kwargs": policy_kwargs
         },
         device='cuda' if torch.cuda.is_available() else 'cpu'
