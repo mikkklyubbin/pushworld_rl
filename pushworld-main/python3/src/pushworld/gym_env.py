@@ -35,9 +35,9 @@ from pushworld.utils.filesystem import iter_files_with_extension
 from pushworld.rendering import savergb
 HISTORY_PER_OBJ = 1
 INFORMATION_CHANEL_PER_OBJECT = 2 + NUM_ACTIONS + HISTORY_PER_OBJ
-HISTORY_STACK = 1
+HISTORY_STACK = 8
 
-INFORMATION_CHANEL_STATIC = 2
+INFORMATION_CHANEL_STATIC = 1 + HISTORY_STACK
 
 def calc_pathes(good, my_pos, puz):
     distance = np.zeros(puz.dimensions) + 1e15
@@ -99,12 +99,14 @@ class PushWorldEnv(gym.Env):
         seq = False,
         augment = False,
         rgb = True,
+        lstm = False,
     ) -> None:
         self._puzzles = []
         self.pddl = need_pddl
         self.puzzle_path = puzzle_path
         self.augment = augment
         self.augment_timer = 200
+        self.lstm = lstm
         for puzzle_file_path in iter_files_with_extension(
             puzzle_path, PUZZLE_EXTENSION
         ):
@@ -169,6 +171,7 @@ class PushWorldEnv(gym.Env):
         self.static_good = None
         self.dynamic_good = None
         self.stack = None
+        self.finished = False
         self.rgb = rgb
         self._action_space = gym.spaces.Discrete(NUM_ACTIONS)
         cells_space = gym.spaces.Box(
@@ -182,7 +185,7 @@ class PushWorldEnv(gym.Env):
         self.all_chanells = 3
         if not self.rgb:
             self.chanels_per_obs = (INFORMATION_CHANEL_STATIC + INFORMATION_CHANEL_PER_OBJECT * self._max_objs)
-            self.all_chanells = self.chanels_per_obs * HISTORY_STACK
+            self.all_chanells = self.chanels_per_obs
             print("Using non-rgb observation space")
             h,w  = self._max_cell_height + 1, self._max_cell_width + 1
             cells_space = gym.spaces.Box(
@@ -229,6 +232,7 @@ class PushWorldEnv(gym.Env):
         self.pred_static = None
         self.distance = None
         self.par = None
+        self.finished = False
         self.prev_av = None
         self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
         self._steps = 0
@@ -516,8 +520,8 @@ class PushWorldEnv(gym.Env):
                     observation[el[0]][el[1]][0] = 1.0
                 observation = np.concatenate((observation, self.get_obj_observation(i)), axis=2)
             observation = np.concatenate((observation, np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, INFORMATION_CHANEL_PER_OBJECT * (self._max_objs - len(self.current_puzzle._movable_objects))), dtype=np.float32)), axis=2)
-            self.stack = np.concatenate((observation, self.stack[:, :, :self.chanels_per_obs * (HISTORY_STACK - 1)]),axis=2)
-            observation = self.stack
+            observation[:,:, INFORMATION_CHANEL_STATIC - HISTORY_STACK + 1: INFORMATION_CHANEL_STATIC] = self.stack[:,:,:-1]
+            self.stack = observation[:,:, INFORMATION_CHANEL_STATIC - HISTORY_STACK : INFORMATION_CHANEL_STATIC]
         if (self.pddl):
             gr  =  self.get_relations_graph()
             return {
@@ -566,9 +570,11 @@ class PushWorldEnv(gym.Env):
         self.dynamic_good = None
         self.pred_static = None
         self.static_distance = None
+        self.finished = False
         self._current_puzzle = self._random_generator.choice(self._puzzles)
         self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
         if self.seq:
+            # print(self.curid)
             self._current_puzzle = self._puzzles[self.curid % len(self._puzzles)]
             self.curid += 1
         self._current_state = self._current_puzzle.initial_state
@@ -576,7 +582,7 @@ class PushWorldEnv(gym.Env):
             self._current_state
         )
         self._steps = 0
-        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
+        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, HISTORY_STACK), dtype=np.float32)
         return self.get_obs_and_info()
     
     def get_obs_and_info(self):
@@ -594,9 +600,10 @@ class PushWorldEnv(gym.Env):
         self.distance = None
         self.par = None
         self.prev_av = None
-        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
+        self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, HISTORY_STACK), dtype=np.float32)
         self._steps = 0
         self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
+        self.finished = False
 
     def step(
         self,
@@ -621,6 +628,7 @@ class PushWorldEnv(gym.Env):
             raise RuntimeError("reset() must be called before step() can be called.")
 
         self._steps += 1
+
         previous_state = self._current_state
         self._current_state = self._current_puzzle.get_next_state(
             self._current_state, action
@@ -685,7 +693,6 @@ class PushWorldEnv(gym.Env):
         reward = -0.01
         if terminated:
             reward = 10.0
-
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {"puzzle_state": self._current_state}
         return obs, reward, terminated, truncated, info
@@ -713,9 +720,11 @@ class PushTargetEnv(PushWorldEnv):
         need_pddl = False,
         rgb = True,
         use_MDP = True,
-        use_DIRECT = False
+        use_DIRECT = False,
+        lstm = False,
+        max_env_steps = 30
     ) -> None:
-        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb, max_obj=max_obj)
+        super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb, max_obj=max_obj, lstm=lstm)
         self.max_mov_ob = 0
         self.use_concentrtion = use_concentrtion
         self.max_steps = max_steps
@@ -724,11 +733,13 @@ class PushTargetEnv(PushWorldEnv):
         self.last_moves = [0, 0, 0, 0]
         self.use_block = use_block
         self.hash_history = {}
+        self.env_steps = 0
         self.loop_penalty = loop_penalty
         self.use_DIRECT = use_DIRECT
         self.block_rew = block_rew
         self.block_peny = block_peny
         self.block = None
+        self.max_env_steps = max_env_steps
         self.last_ac_is_direct = False
         self.use_MDP = use_MDP
         if (self.use_block):
@@ -926,6 +937,7 @@ class PushTargetEnv(PushWorldEnv):
         #     print(mat1['cell'][:,:,i])
         # print(mat1["av"])
         obs = self.convert(mat1)
+        self.env_steps = 0
         info["terminal_observation"] = None
         assert(self.convert(mat1) in self.observation_space)
         assert(obs in self.observation_space)
@@ -990,6 +1002,18 @@ class PushTargetEnv(PushWorldEnv):
         # assert("ZZZZ" == "VVV")
         # assert(self.convert(observation) in self.observation_space)
         return self.convert(observation), -1, False, truncated, info
+    
+    def trans_term_truncated(self, truncated, terminated, info, obs):
+        if (terminated and self.lstm):
+            self.finished = True
+            terminated = False
+        truncated = (truncated or (self.env_steps >= self.max_env_steps and (not self.finished)))
+        terminated = (terminated or (self.env_steps >= self.max_env_steps and self.finished))
+        if terminated or truncated:
+            info["terminal_observation"] = self.convert(obs)
+        else:
+            info["terminal_observation"] = None
+        return truncated, terminated, info
         
 
     def step(self, action: int) -> Union[Tuple[np.ndarray, float, bool, dict], Tuple[np.ndarray, float, bool, bool, dict]]:
@@ -1004,6 +1028,11 @@ class PushTargetEnv(PushWorldEnv):
 
         if self._current_state is None:
             raise RuntimeError("reset() must be called before step() can be called.")
+        self.env_steps += 1
+        if self.finished:
+            observation, _, terminated, truncated, info  = self.get_all_info()
+            truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, observation)
+            return self.convert(observation), 0, terminated, truncated, info
         av_delta = -self.get_av_act().sum()
         self.prev_av = None
         mv_b = self.current_puzzle.movable_objects
@@ -1041,20 +1070,13 @@ class PushTargetEnv(PushWorldEnv):
                     return self.gen_empty_action_res()
                 self.current_puzzle.deconcentrate(action // 2)
             observation, reward, terminated, truncated, info = self.get_all_info()
-            if terminated or truncated:
-                info["terminal_observation"] = self.convert(observation)
-            else:
-                info["terminal_observation"] = None
+            truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, observation)
             return self.convert(observation), -0.01, terminated, truncated, info
         if (action // 4 == 0):
             self.acts.append(action)
             penalty = self.rec_alst_moves(action) * self.loop_penalty
             observation, reward, terminated, truncated, info = super().step(action % 4)
             self.prev_av = None
-            if terminated or truncated:
-                info["terminal_observation"] = self.convert(observation)
-            else:
-                info["terminal_observation"] = None
             obs = self.convert(observation)
             av_delta += obs["av"].sum()
             for i in range(len(prev_st)):
@@ -1065,6 +1087,7 @@ class PushTargetEnv(PushWorldEnv):
             reward += self.new_actions_rew * av_delta
             reward -= penalty
             reward += sum(self.current_puzzle._block) * self.block_rew
+            truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, observation)
             return obs, reward, terminated, truncated, info
         optimal = (1e15, -1, -1)
         self.get_matrix_reachability()
@@ -1079,10 +1102,6 @@ class PushTargetEnv(PushWorldEnv):
                 rew -= self.rec_alst_moves(action % 4) * self.loop_penalty
                 observation, reward, terminated, truncated, info = super().step(action % 4)
                 self.prev_av = None
-                if terminated or truncated:
-                    info["terminal_observation"] = self.convert(observation)
-                else:
-                    info["terminal_observation"] = None
                 obs = self.convert(observation)
                 av_delta += obs["av"].sum()
                 reward += self.new_actions_rew * av_delta
@@ -1093,6 +1112,7 @@ class PushTargetEnv(PushWorldEnv):
                         self.last_moves = [0, 0, 0, 0]
                 reward += self.new_actions_rew * av_delta
                 reward += sum(self.current_puzzle._block) * self.block_rew
+                truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, observation)
                 return obs, reward + rew, terminated, truncated, info
             else:
                 print("warning: no path")

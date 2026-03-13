@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
 from pushworld.eval import eval_ac, eval_ac_rec
+import comet_ml  
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
@@ -41,21 +42,25 @@ config = {
     "rgb": rgb,
     "use_MDP": use_MDP,
     "use_DIRECT": use_DIRECT,
+    "lstm": True,
+    "max_steps": 1000,
 }
 print(rgb)
 in_channels = 3
-menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
+menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", augment = True, **config)
 if not rgb:
     in_channels = menv.all_chanells
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
-
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,}
+experiment = comet_ml.start(project_name="PushWorld")
+experiment.set_name("try_recurrent")
+config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 256, "n_epochs": 2, "need_pddl":need_pddl,}
 print(rgb)
+experiment.log_parameters({**config_train, **config})
 
 
 
-eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, **config)
+eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
 # wandb.init(project="test_", config={**config_train, **config},name="rec train")
 model_save_path = path_to_rep + "python3/model/bst_rec"
@@ -65,11 +70,11 @@ train_ac = []
 
 def test_model(model):
     print("ZZ")
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, seq =True,  **config)
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", seq =True,  **config)
     num_episodes = 200
     s1 = eval_ac_rec(test_env, num_episodes, model, verbose=True)
     test_ac.append(s1)
-    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, seq = True, **config)
+    test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", seq = True, **config)
     num_episodes = 200
     s1 = eval_ac_rec(test_env, num_episodes, model, verbose=True)
     train_ac.append(s1)
@@ -89,6 +94,7 @@ def test_model(model):
     ax.set_title('Training Accuracy')
     fig.savefig(path_to_rep + "python3/fotos/train_ac.png")
     # wandb.log({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
+    experiment.log_metrics({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
     plt.close(fig)
     
              
