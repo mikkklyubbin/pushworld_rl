@@ -22,6 +22,7 @@ from pushworld.rendering import savergb, create_rgb_video_opencv
 from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
 from pushworld.eval import eval_ac
+import comet_ml
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
@@ -34,6 +35,8 @@ need_pddl = False
 use_MDP = True
 use_DIRECT = False
 max_obj = 5
+experiment = comet_ml.start(project_name="PushWorld")
+experiment.set_name("pre trained extractor")
 print("sss", rgb)
 config = {
     "use_concentrtion": use_concentrtion,
@@ -56,7 +59,8 @@ menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, au
 if not rgb:
     in_channels = menv.all_chanells
 print("in_channels", in_channels)
-model_kwargs = {"in_channels": in_channels}
+extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
+model_kwargs = {"in_channels": in_channels, "copy_from": extractor}
 
 config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,}
 print(rgb)
@@ -65,8 +69,9 @@ print(rgb)
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
-wandb.init(project="test_", config={**config_train, **config},name="plus_history")
-model_save_path = path_to_rep + "python3/model/bst2"
+# wandb.init(project="test_", config={**config_train, **config},name="plus_history")
+experiment.log_parameters({**config_train, **config})
+model_save_path = path_to_rep + "python3/model/bst"
 
 test_ac = []
 train_ac = []
@@ -96,7 +101,7 @@ def test_model(model):
     ax.set_ylabel('Accuracy')
     ax.set_title('Training Accuracy')
     fig.savefig(path_to_rep + "python3/fotos/train_ac.png")
-    wandb.log({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
+    experiment.log_metrics({"test_ac": test_ac[-1], "train_ac": train_ac[-1]})
     plt.close(fig)
     
              
@@ -112,12 +117,13 @@ eval_callback = EvalCallback(
 )
 
 stats_callback = StatsCallback(stats_func=test_model)
-metric_call = MetricsCallback(1)
+metric_call = MetricsCallback(1, experiment=experiment)
 
-combined_callback = CallbackList([eval_callback, stats_callback, metric_call])
+combined_callback = CallbackList([eval_callback, stats_callback])
 
 print(menv.observation_space)
 model = train_ppo(menv, combined_callback, **config_train, model_kwargs=model_kwargs)
 
 model.save(path_to_rep + "python3/model/ppo_custom_model")
+experiment.end()
 
