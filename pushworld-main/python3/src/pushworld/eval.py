@@ -1,5 +1,6 @@
 import numpy as np
 def eval_ac(env, num_episodes:int, model, verbose:bool = False):
+    model.policy.set_training_mode(False)
     success_count:int = 0
     for episode in range(num_episodes):
         obs, _ = env.reset()  
@@ -20,13 +21,14 @@ def eval_ac(env, num_episodes:int, model, verbose:bool = False):
         print(f"Успешных эпизодов: {success_count}")
         print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
+    model.policy.set_training_mode(True)
     return s1
 
 
 
 def eval_ac_rec(env, num_episodes:int, model, verbose:bool = False):
+    model.policy.set_training_mode(False)
     success_count:int = 0
-    print("ldlefe")
     for episode in range(num_episodes):
         obs, _ = env.reset()  
         terminated = False
@@ -53,4 +55,5 @@ def eval_ac_rec(env, num_episodes:int, model, verbose:bool = False):
         print(f"Успешных эпизодов: {success_count}")
         print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
     s1 = success_count/num_episodes*100
+    model.policy.set_training_mode(True)
     return s1

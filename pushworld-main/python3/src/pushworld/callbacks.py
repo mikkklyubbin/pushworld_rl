@@ -17,10 +17,11 @@ class StatsCallback(BaseCallback):
                 self.stats_func(self.model)
 
 class MetricsCallback(BaseCallback):
-    def __init__(self, eval_freq=50000, verbose=0):
+    def __init__(self, eval_freq=50000, verbose=0, experiment=None):
         super().__init__(verbose)
         self.eval_freq = eval_freq
         self.last_eval_step = 0
+        self.experiment = experiment
         
     def _on_step(self) -> bool:
         return True
@@ -31,4 +32,5 @@ class MetricsCallback(BaseCallback):
             if hasattr(self.model, 'logger') and self.model.logger is not None:
                 for key, value in self.model.logger.name_to_value.items():
                     if key in ['train/entropy_loss', 'train/policy_gradient_loss', 'train/value_loss', 'train/clip_fraction', 'train/loss', 'train/explained_variance']:
-                        wandb.log({key: value})
+                        self.experiment.log_metric(key, value)
+                        # wandb.log({key: value})

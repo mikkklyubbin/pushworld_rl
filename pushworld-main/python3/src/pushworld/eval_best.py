@@ -43,39 +43,49 @@ if not rgb:
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
-model = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip")
+model = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst/best_model.zip")
 print(model.policy)
 # print(model.observation_space)
 # model.eval()
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+model.policy.set_training_mode(False)
 for group in ["all", "base", "walls", "shapes", "obstacles", "goals"]:
     print(group)
     test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/{group}/test", 100,seq=True, **config)
     num_episodes = 200
     success_count = 0
-    for episode in range(num_episodes):
+    solved  = [0 for i in range(num_episodes)]
+    obs1 = None
+    for j in range(1):
+        for episode in range(num_episodes):
 
-        obs, _ = test_env.reset()  
-        terminated = False
-        truncated = False
-        episode_rewards = []
-        rgb_ar  = [test_env.render()]
-        while not terminated:
-            action, _ = model.predict(obs)  
-
-            obs, reward, terminated, truncated, info = test_env.step(action)
-            episode_rewards.append(reward)
-            rgb_ar.append(test_env.render())
-            if (truncated):
-                break
-            
-        if terminated:
-            # savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
-            success_count += 1
-        #savergb(test_env.render(), "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
-        res = test_env.render_acts()
-        # create_rgb_video_opencv(res, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/check" + str(episode % 10) + ".avi")
-    print(f"\nРезультаты за {num_episodes} эпизодов:")
-    print(f"Успешных эпизодов: {success_count}")
-    print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
-    s1 = success_count/num_episodes*100
+            obs, _ = test_env.reset()  
+            terminated = False
+            truncated = False
+            episode_rewards = []
+            rgb_ar  = [test_env.render()]
+            while not terminated:
+                
+                action, _ = model.predict(obs, True)  
+                if (episode == 0 and len(episode_rewards) == 0):
+                    # print(obs)
+                    obs1 = obs
+                    
+                obs, reward, terminated, truncated, info = test_env.step(action)
+                episode_rewards.append(reward)
+                rgb_ar.append(test_env.render())
+                if (truncated):
+                    break
+                
+            if terminated:
+                # savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/" + str(episode) + ".jpg")
+                solved[episode] = 1
+                success_count += 1
+            #savergb(test_env.render(), "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
+            res = test_env.render_acts()
+            # create_rgb_video_opencv(res, "/home/mik/hse/Pushworld/pushworld-main/python3/fotos/check" + str(episode % 10) + ".avi")
+        print(f"\nРезультаты за {num_episodes} эпизодов:")
+        print(f"Успешных эпизодов: {success_count}")
+        print(f"Процент успеха: {success_count/num_episodes*100:.2f}%")
+        s1 = success_count/num_episodes*100
+        print(sum(solved) / num_episodes)
