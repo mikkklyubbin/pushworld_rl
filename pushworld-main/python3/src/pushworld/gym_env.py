@@ -129,6 +129,7 @@ class PushWorldEnv(gym.Env):
         self._max_cell_height = max(heights)
         self.par = None
         self.distance = None
+        self.distance_pushable = [None, None, None, None]
         if to_height is not None:
             assert to_height >= self._max_cell_height
             self._max_cell_height=  to_height
@@ -138,8 +139,6 @@ class PushWorldEnv(gym.Env):
         if max_obj is not None:
             assert max_obj >= self._max_objs
             self._max_objs = max_obj
-        print(self._max_objs)
-        print(max_obj)
         if standard_padding:
             standard_cell_height, standard_cell_width = get_max_puzzle_dimensions()
 
@@ -221,23 +220,27 @@ class PushWorldEnv(gym.Env):
                 )
             })
         self.obj_pathes = None
+        self.obj_blocked = [False for i in range(self._max_objs)]
 
     def set_goals(self, goals):
         self.current_puzzle._goal_state = goals[1:]
         self.current_puzzle.set_agent_goal(goals[0])
+
+    
 
     def restart(self):
         self._current_state = self._current_puzzle._initial_state
         self.dynamic_good = None
         self.pred_static = None
         self.distance = None
+        self.distance_pushable = [None, None, None, None]
         self.par = None
         self.finished = False
         self.prev_av = None
         self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self.all_chanells), dtype=np.float32)
         self._steps = 0
         self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
-
+        self.obj_blocked = [False for i in range(self._max_objs)]
     def collect_multy_agent_data(self, positions, n_agents):
         s = self.get_observation()
         res = np.zeros((n_agents,) + self.agent_observation_space.shape, dtype=np.float32)
@@ -298,6 +301,32 @@ class PushWorldEnv(gym.Env):
     def get_all_obj(self, ob:PushWorldObject, pos):
         dx, dy = pos
         return set((x + dx, y + dy) for x, y in ob.cells)
+    
+    def check_blocknap(self, dx, dy, obj_idx):
+        block = True
+        for (x,y) in self.get_all_obj(self.current_puzzle._movable_objects[obj_idx], self._current_state[obj_idx]):
+            if (x + dx, y + dy) in self.get_all_obj(self.current_puzzle._movable_objects[obj_idx], self._current_state[obj_idx]) or (x + dx, y + dy) in self.current_puzzle.wall_positions:
+                continue
+            block = False
+            break
+        return block
+    
+    def check_is_blocked(self, obj_idx):
+        if (self.obj_blocked[obj_idx]):
+            return 0
+        cntx = 0
+        cnty = 0
+        for dx in [-1, 1]:
+            if (self.check_blocknap(dx, 0, obj_idx)):
+                cntx += 1
+        for dy in [-1, 1]:
+            if (self.check_blocknap(0, dy, obj_idx)):
+                cnty += 1
+        if (cntx > 0 and cnty > 0):
+            self.obj_blocked[obj_idx] = True
+            return -1 * (obj_idx <= len(self.current_puzzle._goals) and self.current_puzzle._goal_state[obj_idx - 1] != self._current_state[obj_idx])
+        return 0
+
     
     def get_relations_graph(self):
         edges = []
@@ -435,7 +464,7 @@ class PushWorldEnv(gym.Env):
                 #el[0] + i = el2[0] => el2[0] - el[0] = i
                 i:int = int(el2[0] - el[0])
                 j:int  = int(el2[1] - el[1])
-                if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1]):
+                if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1] and (i,j) not in self.current_puzzle._agent_collision_map[action % 4]):
                     if (distances[i][j] < res[0]):
                         res = (distances[i][j], i, j)
         return res[1:]
@@ -457,7 +486,7 @@ class PushWorldEnv(gym.Env):
                 #el[0] + i = el2[0] => el2[0] - el[0] = i
                 i:int = int(el2[0] - el[0])
                 j:int  = int(el2[1] - el[1])
-                if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1]):
+                if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1] and (i,j) not in self.current_puzzle._agent_collision_map[action % 4]):
                     if (distances[i][j] < 1e12):
                         # print(distances[i][j], i, j)
                         res.append((i, j))
@@ -470,7 +499,7 @@ class PushWorldEnv(gym.Env):
         state = self._current_state
         assert state is not None
         if (verbose):
-            print(self._current_state)
+            print(self._current_state, "curst")
         my_pos = state[AGENT_IDX]
         puz = self.current_puzzle
         self.get_dynamic_good()
@@ -490,7 +519,8 @@ class PushWorldEnv(gym.Env):
                 res[el[0]][el[1]][1] = 1.0
         self.get_matrix_reachability()
         for  i in range(0, 4):
-            x, y = self.get_point_to_go(id, i, self.distance)
+            self.calc_cells_for_push(i)
+            x, y = self.get_point_to_go(id, i, self.distance_pushable[i])
             back = self.par
             if (x, y) == (-1, -1):
                 self.get_static_path()
@@ -566,11 +596,13 @@ class PushWorldEnv(gym.Env):
                 self._puzzles.append(PushWorldPuzzle(puzzle_file_path, self.augment))
         self.par = None
         self.distance = None
+        self.distance_pushable = [None, None, None, None]
         self.static_good = None
         self.dynamic_good = None
         self.pred_static = None
         self.static_distance = None
         self.finished = False
+        self.obj_blocked = [False for i in range(self._max_objs)]
         self._current_puzzle = self._random_generator.choice(self._puzzles)
         self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
         if self.seq:
@@ -598,12 +630,14 @@ class PushWorldEnv(gym.Env):
         self.dynamic_good = None
         self.pred_static = None
         self.distance = None
+        self.distance_pushable = [None, None, None, None]
         self.par = None
         self.prev_av = None
         self.stack = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, HISTORY_STACK), dtype=np.float32)
         self._steps = 0
         self.obj_pathes = np.zeros((self._max_cell_height + 1, self._max_cell_width + 1, self._max_objs))
         self.finished = False
+        self.obj_blocked = [False for i in range(self._max_objs)]
 
     def step(
         self,
@@ -651,17 +685,21 @@ class PushWorldEnv(gym.Env):
                 self._current_state
             )
             reward = current_achieved_goals - previous_achieved_goals - 0.01 + previous_distance - cur_distance
+            for i in range(1, len(self.current_puzzle._movable_objects)):
+                reward += self.check_is_blocked(i)
 
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {"puzzle_state": self._current_state}
         for i in range(1, len(self.current_puzzle._movable_objects)):
             if (self._current_state[i] != previous_state[i]):
                 self.distance = None
+                self.distance_pushable = [None, None, None, None]
                 self.par = None
                 self.dynamic_good = None
                 break
         if (self._current_state[AGENT_IDX] != previous_state[AGENT_IDX]):
             self.distance = None
+            self.distance_pushable = [None, None, None, None]
             self.par = None
             self.static_distance = None
             self.pred_static = None
@@ -696,6 +734,58 @@ class PushWorldEnv(gym.Env):
         truncated = False if self._max_steps is None else self._steps >= self._max_steps
         info = {"puzzle_state": self._current_state}
         return obs, reward, terminated, truncated, info
+
+
+    def pushing_graph(self, action:int):
+        self.get_matrix_reachability()
+        self.used = [False for i in range(self._max_objs)]
+        self.pushable = [True for i in range(self._max_objs)]
+        for i in range(1, len(self.current_puzzle._movable_objects)):
+            if (not self.used[i]):
+                self.dfs(i, action)
+    
+    def calc_cells_for_push(self, action:int):
+        if (self.distance_pushable[action % 4] is not None):
+            return
+        self.pushing_graph(action)
+        dx = Actions.DISPLACEMENTS[action % 4][0]
+        dy = Actions.DISPLACEMENTS[action % 4][1]
+        self.distance_pushable[action % 4] = self.distance.copy()
+        moved = self.get_all_obj(self.current_puzzle._movable_objects[0], (dx,dy))
+        for i in range(1, len(self.current_puzzle._movable_objects)):
+            if (not self.pushable[i]):
+                for el in self.get_all_obj(self.current_puzzle._movable_objects[i], self._current_state[i]):
+                    for el2 in moved:
+                        pos = (el[0] - el2[0], el[1] - el2[1])
+                        if (0 <= pos[0] and pos[0] < self.distance_pushable[action % 4].shape[0] and 0 <= pos[1] and pos[1] < self.distance_pushable[action % 4].shape[1]):
+                            self.distance_pushable[action % 4][pos[0]][pos[1]] = 1e12
+
+
+
+
+    def get_collision(self, id_move, dx, dy, obj_idx, move_pos):
+        obj_moved = self.get_all_obj(self.current_puzzle._movable_objects[id_move], (move_pos[0] + dx, move_pos[1] + dy))   
+        for (x,y) in self.get_all_obj(self.current_puzzle._movable_objects[obj_idx], self._current_state[obj_idx]):
+            if (x, y) in obj_moved:
+                return True
+        return False
+
+    def dfs(self, id:int, action:int):
+        self.used[id] = True
+        dx = Actions.DISPLACEMENTS[action % 4][0]
+        dy = Actions.DISPLACEMENTS[action % 4][1]
+        if (self._current_state[id] in self.current_puzzle._wall_collision_map[action][id]):
+            self.pushable[id] = False
+            return
+        for i in range(1, len(self.current_puzzle._movable_objects)):
+            if (self.get_collision(id, dx, dy, i, self._current_state[id])):
+                if  not self.used[i]:
+                    self.dfs(i, action)
+                self.pushable[id] = self.pushable[id] and self.pushable[i]
+                if (not self.pushable[id]):
+                    return
+
+        
         
 
 class PushTargetEnv(PushWorldEnv):
@@ -841,6 +931,7 @@ class PushTargetEnv(PushWorldEnv):
             rew += reward
 
         return self.convert(self.get_observation()), rew - penalty, False  , False, {}
+        
     
     
     def get_av_act(self):
@@ -851,7 +942,8 @@ class PushTargetEnv(PushWorldEnv):
         mv_b = self.current_puzzle.movable_objects
         av[self.max_mov_ob * NUM_ACTIONS:self.max_mov_ob * NUM_ACTIONS + len(mv_b) * 2] = self.use_concentrtion
         av[self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + 1: self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * 2 + len(mv_b)] = self.use_block
-
+        for  a in  range(4):
+            self.calc_cells_for_push(a)
         if (self.use_DIRECT and not self.last_ac_is_direct):
             shift = self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS
             self.get_matrix_reachability()
@@ -880,8 +972,8 @@ class PushTargetEnv(PushWorldEnv):
                     #el[0] + i = el2[0] => el2[0] - el[0] = i
                     i:int = int(el2[0] - el[0])
                     j:int  = int(el2[1] - el[1])
-                    if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1]):
-                        if (self.distance[i][j] < 1e12):
+                    if (0 <= i and i < puz.dimensions[0] and 0 <= j and j < puz.dimensions[1] and (i,j) not in self.current_puzzle._agent_collision_map[action % 4]):
+                        if (self.distance_pushable[action % 4][i][j] < 1e12):
                             good = True
                             break
                 if (good):
@@ -1093,7 +1185,8 @@ class PushTargetEnv(PushWorldEnv):
         self.get_matrix_reachability()
         rew = 0
         if (action // 4 < len(mv_b)):
-            optimal = self.get_point_to_go(action // 4, action % 4, self.distance)
+            self.calc_cells_for_push(action % 4)
+            optimal = self.get_point_to_go(action // 4, action % 4, self.distance_pushable[action % 4])
             if (optimal != (-1, -1)):
                 obs, rew, terminated, truncated, info = self.move_to_point(optimal[0], optimal[1])
                 if (truncated or terminated):

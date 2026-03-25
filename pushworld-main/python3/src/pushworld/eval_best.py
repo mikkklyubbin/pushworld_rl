@@ -1,4 +1,4 @@
-from pushworld.model import CustomCNN, CustomPolicy
+from pushworld.model import CNNExtractor_with_map_preddiction, CustomCNN, CustomPolicy
 import torch.nn as nn
 import numpy as np
 import torch
@@ -43,7 +43,7 @@ if not rgb:
 print("in_channels", in_channels)
 model_kwargs = {"in_channels": in_channels}
 
-model = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst/best_model.zip")
+model = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst/best_model.zip", ex_class=CNNExtractor_with_map_preddiction)
 print(model.policy)
 # print(model.observation_space)
 # model.eval()

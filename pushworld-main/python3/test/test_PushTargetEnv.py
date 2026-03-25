@@ -14,7 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '/home/mik/hse/Pus
 from stable_baselines3.common.evaluation import evaluate_policy
 from pushworld.gym_env import PushTargetEnv
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
-from pushworld.model import CustomCNN, CustomPolicy, train_ppo
+from pushworld.model import CustomCNN, CustomPolicy, train_ppo, CNNExtractor_with_map_preddiction
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -23,6 +23,8 @@ from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
 from pushworld.eval import eval_ac
 import comet_ml
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
@@ -59,15 +61,18 @@ menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, au
 if not rgb:
     in_channels = menv.all_chanells
 print("in_channels", in_channels)
-extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
-model_kwargs = {"in_channels": in_channels, "copy_from": extractor}
+menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment=True, **config)
 
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,}
+extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
+model_kwargs = {"in_channels": in_channels}
+
+config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,"extractor_class": CNNExtractor_with_map_preddiction}
 print(rgb)
 
 
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, **config)
+
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
 # wandb.init(project="test_", config={**config_train, **config},name="plus_history")
 experiment.log_parameters({**config_train, **config})
@@ -78,7 +83,6 @@ train_ac = []
 
 def test_model(model):
     test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, seq =True,  **config)
-
     num_episodes = 200
     s1 = eval_ac(test_env, num_episodes, model, verbose=True)
     test_ac.append(s1)
@@ -126,4 +130,4 @@ model = train_ppo(menv, combined_callback, **config_train, model_kwargs=model_kw
 
 model.save(path_to_rep + "python3/model/ppo_custom_model")
 experiment.end()
-
+# menv.save(path_to_rep + "python3/model/vec_normalize.pkl")

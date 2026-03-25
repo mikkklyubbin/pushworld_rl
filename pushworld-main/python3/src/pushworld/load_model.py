@@ -11,7 +11,7 @@ from pushworld.gym_env import PushTargetEnv, INFORMATION_CHANEL_PER_OBJECT, INFO
 from pushworld.model import CustomCNN, CustomPolicy, train_ppo, train_rec_PPO, CustomRecurrentPolicy
 from sb3_contrib import RecurrentPPO
 from rendering import create_rgb_video_opencv, savergb
-def load_PPO_model(model_save_path):
+def load_PPO_model(model_save_path, ex_class = CustomCNN):
     path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
     use_concentrtion:bool = False
     new_actions_rew:float = 0
@@ -50,7 +50,7 @@ def load_PPO_model(model_save_path):
 
     config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "need_pddl":need_pddl, **model_kwargs}
     policy_kwargs = dict(
-        features_extractor_class=CustomCNN,
+        features_extractor_class=ex_class,
         features_extractor_kwargs=config_train,
         net_arch=dict(pi=[512, 256], vf=[512, 256])
     )

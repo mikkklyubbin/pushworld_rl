@@ -372,7 +372,6 @@ class PushWorldPuzzle:
         """Returns the state that results from performing the `action` in the given
         `state`."""
         agent_pos = state[AGENT_IDX]
-
         if agent_pos in self._agent_collision_map[action]:
             return state  # the actor cannot move
 
@@ -619,6 +618,8 @@ def _populate_static_collisions(
         for obstacle_x, obstacle_y in static_obstacle_pixels:
             dx = -dis_x + obstacle_x - object_x
             dy = -dis_y + obstacle_y - object_y
+            dx = int(dx)
+            dy = int(dy)
             if (
                 dx >= 0
                 and dy >= 0
@@ -654,6 +655,8 @@ def _populate_dynamic_collisions(
         for pushee_x, pushee_y in pushee_pixels:
             dx = -dis_x + pushee_x - pusher_x
             dy = -dis_y + pushee_y - pusher_y
+            dx = int(dx)
+            dy = int(dy)
             if not points_overlap(pusher_pixels, pushee_pixels, (dx, dy)):
                 collision_positions.add((dx, dy))
 

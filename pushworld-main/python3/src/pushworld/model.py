@@ -8,6 +8,53 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3 import PPO, DQN
 from torch_geometric.nn import RGCNConv, global_mean_pool
 from sb3_contrib import RecurrentPPO
+
+
+class channel_attention_module(nn.Module):
+    def __init__(self, ch, ratio=8):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.mlp = nn.Sequential(
+            nn.Linear(ch, ch//ratio, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(ch//ratio, ch, bias=False)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x1 = self.avg_pool(x).squeeze(-1).squeueze(-1)
+        x1 = self.mlp(x1)
+        x2 = self.max_pool(x).squeeze(-1).squeeze(-1)
+        x2 = self.mlp(x2)
+        feats = x1 + x2
+        feats = self.sigmoid(feats).unsqueeze(-1).unsqueeze(-1)
+        return x * feats
+
+class spatial_attention_module(nn.Module):
+    def __init__(self, kernel_size=7):
+        super().__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size//2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x1 = torch.mean(x, dim=1, keepdim=True)
+        x2, _ = torch.max(x, dim=1, keepdim=True)
+        feats = torch.cat([x1, x2], dim=1)
+        feats = self.conv(feats)
+        feats = self.sigmoid(feats)
+        return x * feats
+
+class cbam(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self.ca = channel_attention_module(channel)
+        self.sa = spatial_attention_module()
+
+    def forward(self, x):
+        x = self.ca(x)
+        x = self.sa(x)
+        return x
 class RGCN_ML(torch.nn.Module):
     def __init__(self, num_layers = 10, features_dim = 128, hidden_dim = 64, outpu_dim = 64, num_relationships = 10):
         super().__init__()
@@ -53,6 +100,7 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.Conv2d(64, 128, kernel_size=5, stride=1, padding=2),
             nn.ReLU(),
             nn.BatchNorm2d(128),
+            # cbam(128),
             nn.AdaptiveAvgPool2d((6, 6)), 
             nn.Flatten(),
         )
@@ -140,6 +188,8 @@ class CustomCNN(BaseFeaturesExtractor):
 
 
 
+
+
 class CustomPolicy(ActorCriticPolicy):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -156,6 +206,8 @@ class CustomPolicy(ActorCriticPolicy):
         
         with torch.no_grad():
             actions, values, log_prob = self.forward(observation, deterministic=deterministic)
+            if deterministic:
+                actions = torch.argmax(log_prob, dim=1)
         return actions
     
     def forward(self, obs, deterministic=False):
@@ -209,10 +261,59 @@ class CustomPolicy(ActorCriticPolicy):
 
         return values, log_prob, entropy
     
-def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}):
+class Decoder(torch.nn.Module):
+    def __init__(self, latent_dim, size, taget_channels):
+        self.lat = latent_dim
+        super().__init__()
+        print("size", size)
+        self.deconv_layers = nn.Sequential(
+            nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Upsample(size, mode='bilinear', align_corners=False),
+            nn.Conv2d(32, taget_channels, kernel_size=3, padding=1),
+            nn.Sigmoid(),
+        )
+    def forward(self, x):
+        x = x.reshape(-1, self.lat, 1, 1)
+        return self.deconv_layers(x)
+
+class ResultPredictor(torch.nn.Module):
+    def __init__(self, train_config, obs_space, num_actions, target_shape, target_channels = 1):
+        super().__init__()
+        self.enc = CustomCNN(obs_space, **train_config)
+        self.mixer = nn.Sequential(nn.Linear(num_actions + train_config["features_dim"], train_config["features_dim"]), nn.ReLU())
+        self.dec = Decoder(train_config["features_dim"], target_shape[-3:-1], target_channels)
+    def forward(self, x, a):
+        x = self.enc(x)
+        a = F.one_hot(a, num_classes=self.mixer[0].in_features - x.shape[1]).float()
+        x = self.mixer(torch.cat([x, a], dim=-1))
+        x = self.dec(x)
+        return x
+    
+class CNNExtractor_with_map_preddiction(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3, num_layers = 10, copy_from = None):
+        super(CNNExtractor_with_map_preddiction, self).__init__(observation_space, features_dim)
+        self.cnn = CustomCNN(observation_space, features_dim, need_pddl, node_feature, hidden_dim, in_channels, num_layers, copy_from)
+        self.dec = Decoder(features_dim, observation_space.spaces['cell'].shape[0:2], 1)
+        self.combiner = nn.Sequential(
+            nn.Linear(observation_space.spaces['cell'].shape[0] * observation_space.spaces['cell'].shape[1] + features_dim, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations):
+        features = self.cnn(observations)
+        pred_map = self.dec(features)
+        res = self.combiner(torch.cat([features, pred_map.reshape(-1, pred_map.shape[-1] * pred_map.shape[-2])], dim=1))
+        return res
+    
+def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}, extractor_class = CustomCNN):
 
     policy_kwargs = dict(
-        features_extractor_class=CustomCNN,
+        features_extractor_class=extractor_class,
         features_extractor_kwargs=dict(features_dim=features_dim, need_pddl = need_pddl, node_feature = node_feature, hidden_dim=hidden_dim, **model_kwargs),
         net_arch=dict(pi=[512, 256], vf=[512, 256])
     )
@@ -345,35 +446,3 @@ def train_rec_PPO(env, callback, total_timesteps=60000000, need_pddl = False, no
     model.learn(total_timesteps=total_timesteps, callback=callback)
     return model
 
-class Decoder(torch.nn.Module):
-    def __init__(self, latent_dim, size, taget_channels):
-        self.lat = latent_dim
-        super().__init__()
-        print("size", size)
-        self.deconv_layers = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim, 64, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Upsample(size, mode='bilinear', align_corners=False),
-            nn.Conv2d(32, taget_channels, kernel_size=3, padding=1),
-            nn.Sigmoid(),
-        )
-    def forward(self, x):
-        x = x.reshape(-1, self.lat, 1, 1)
-        return self.deconv_layers(x)
-
-class ResultPredictor(torch.nn.Module):
-    def __init__(self, train_config, obs_space, num_actions, target_shape, target_channels = 1):
-        super().__init__()
-        self.enc = CustomCNN(obs_space, **train_config)
-        self.mixer = nn.Sequential(nn.Linear(num_actions + train_config["features_dim"], train_config["features_dim"]), nn.ReLU())
-        self.dec = Decoder(train_config["features_dim"], target_shape[-3:-1], target_channels)
-    def forward(self, x, a):
-        x = self.enc(x)
-        a = F.one_hot(a, num_classes=self.mixer[0].in_features - x.shape[1]).float()
-        x = self.mixer(torch.cat([x, a], dim=-1))
-        x = self.dec(x)
-        return x

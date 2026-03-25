@@ -74,6 +74,19 @@ class MultiAgentPushTargetEnv(EnvBase):
         r2, state = self.solver(self.env)
         return r1 + r2
     
+    def is_solved(self):
+        self.env.restart()
+        tmp = self.env.current_puzzle._goal_state
+        tmp = (None, *tmp)
+        self.env.set_goals(self.positions)
+        r1, state = self.solver(self.env)
+        self.env.change_state(state)
+        self.env.set_goals(tmp)
+        r2, state = self.solver(self.env)
+        if (self.env.current_puzzle.is_goal_state(state)):
+            return 1
+        return 0
+    
     def _set_seed(self, seed):
         torch.manual_seed(seed)
 
