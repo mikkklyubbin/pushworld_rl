@@ -379,6 +379,38 @@ class PushWorldEnv(gym.Env):
                 'edges':graph_matrix,
                 'types':types_res
         }
+        
+    def good_point(self, x:int, y:int, dx:int, dy:int,puz:PushWorldPuzzle):
+        if (x + dx  < 0 ):
+            return False
+        if (y + dy  < 0):
+            return False
+        if (x + dx >= puz.dimensions[0]):
+            return False
+        if (y + dy >= puz.dimensions[1]):
+            return False
+        return True
+        
+        
+    def calc_dists(self, state):
+        puz = self.current_puzzle
+        que  = queue.Queue()
+        ss = np.zeros((puz.dimensions[0], puz.dimensions[1])) + 1e15
+        for i in range(len(self.current_puzzle.movable_objects)):
+            for el in  self.get_all_cells(self.current_puzzle._movable_objects[i], state[i]):
+                ss[el[0]][el[1]] = 0
+                que.put((el[0], el[1]))
+        while not que.empty():
+            f = que.get()
+            x, y = f[0], f[1]
+            if (x == state[AGENT_IDX][0] and y == state[AGENT_IDX][1]):
+                return ss[x][y]
+            for dx, dy in [(-1, 0), (1, 0), (0, 1), (0, -1)]:
+                if (self.good_point(x, y, dx, dy, puz) and ss[x + dx][y + dy] > ss[x][y] + 1):
+                    ss[x + dx][y + dy] = ss[x][y] + 1
+                    que.put((x + dx, y + dy))
+        assert False, "Agent is not reachable from any object"
+            
 
     def get_static_block(self):
         if (self.static_good is not None):
@@ -678,13 +710,17 @@ class PushWorldEnv(gym.Env):
             previous_distance = self._current_puzzle.count_sum_distance(
                 previous_state
             )
+            prev_dists = self.calc_dists(previous_state) * 0.01
+            cur_dists = self.calc_dists(self._current_state) *  0.01
+            
             cur_distance = self._current_puzzle.count_sum_distance(
                 self._current_state
             )
             current_achieved_goals = self._current_puzzle.count_achieved_goals(
                 self._current_state
             )
-            reward = current_achieved_goals - previous_achieved_goals - 0.01 + previous_distance - cur_distance
+
+            reward = current_achieved_goals - previous_achieved_goals - 0.01 + previous_distance - cur_distance -cur_dists + prev_dists
             for i in range(1, len(self.current_puzzle._movable_objects)):
                 reward += self.check_is_blocked(i)
 
