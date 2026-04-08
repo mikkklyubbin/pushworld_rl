@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
+import json
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -25,7 +26,7 @@ from pushworld.eval import eval_ac
 import comet_ml
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
+path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -34,27 +35,14 @@ use_block =  False
 loop_penalty = 0.05
 rgb = False
 need_pddl = False
-use_MDP = True
+use_MultiActions = True
 use_DIRECT = False
 max_obj = 5
 experiment = comet_ml.start(project_name="PushWorld")
 experiment.set_name("pre trained extractor")
 print("sss", rgb)
-config = {
-    "use_concentrtion": use_concentrtion,
-    "new_actions_rew": new_actions_rew,
-    "block_rew": block_rew,
-    "block_peny": block_peny, 
-    "use_block":use_block,
-    "loop_penalty":loop_penalty,
-    "need_pddl":need_pddl,
-    "to_height":11,
-    "to_width":11,
-    "max_obj":max_obj,
-    "rgb": rgb,
-    "use_MDP": use_MDP,
-    "use_DIRECT": use_DIRECT,
-}
+config = json.load(open(path_to_rep + "python3/configs/exp1.json", "r"))
+
 print(rgb)
 in_channels = 3
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
@@ -63,7 +51,7 @@ if not rgb:
 print("in_channels", in_channels)
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment=True, **config)
 
-extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
+# extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
 model_kwargs = {"in_channels": in_channels}
 
 config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,"extractor_class": CNNExtractor_with_map_preddiction}
