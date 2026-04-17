@@ -30,7 +30,7 @@ rgb = False
 
 
 
-menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test/level_0_all_test_199.pwp", 100, augment = False, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05, block_rew = block_rew, block_peny = block_peny, use_block = use_block, need_pddl = need_pddl, rgb = rgb,use_MDP = True, use_DIRECT = False, max_obj = 5, lstm = True)
+menv = PushTargetEnv(path_to_rep + "/benchmark/puzzles/level0/all/test/level_0_all_test_10.pwp", 100, augment = False, use_concentrtion = use_concentrtion, new_actions_rew = new_actions_rew, loop_penalty = 0.05, block_rew = block_rew, block_peny = block_peny, use_block = use_block, need_pddl = need_pddl, rgb = rgb,use_MDP = True, use_DIRECT = False, max_obj = 5, lstm = True)
 
 
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
@@ -49,6 +49,7 @@ while (True):
     assert(o in menv._observation_space)
     rgb = menv.render()
     savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
+    print(menv.current_puzzle.is_goal_state(menv._current_state))
     print(o['av'])
 
 

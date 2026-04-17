@@ -2,6 +2,7 @@ import sys
 import os
 import pushworld
 import torch
+import gym
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
@@ -22,11 +23,12 @@ import cv2
 from pushworld.rendering import savergb, create_rgb_video_opencv
 from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
-from pushworld.eval import eval_ac
+from pushworld.eval import eval_ac, eval_ac_w
 import comet_ml
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-path_to_rep = "/home/mikk/PushWorld/pushworld_rl/pushworld-main/"
+from pushworld.wrappers import PushTargetEnv, RewardWrapper
+path_to_rep = "/home/mik/hse/Pushworld/pushworld-main/"
 use_concentrtion:bool = False
 new_actions_rew:float = 0
 block_rew:float = 0
@@ -39,17 +41,19 @@ use_MultiActions = True
 use_DIRECT = False
 max_obj = 5
 experiment = comet_ml.start(project_name="PushWorld")
-experiment.set_name("pre trained extractor")
+experiment.set_name("tester")
 print("sss", rgb)
 config = json.load(open(path_to_rep + "python3/configs/exp1.json", "r"))
 
 print(rgb)
 in_channels = 3
 menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment = True, **config)
+assert isinstance(menv, gym.Env)
 if not rgb:
     in_channels = menv.all_chanells
 print("in_channels", in_channels)
-menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, augment=True, **config)
+# mean_data = menv.export()
+
 
 # extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
 model_kwargs = {"in_channels": in_channels}
@@ -59,7 +63,7 @@ print(rgb)
 
 
 
-eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, **config)
+eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
 
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
 # wandb.init(project="test_", config={**config_train, **config},name="plus_history")

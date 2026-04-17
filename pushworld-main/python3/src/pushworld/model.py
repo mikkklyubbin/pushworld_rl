@@ -132,7 +132,7 @@ class CustomCNN(BaseFeaturesExtractor):
             self.node_feat_dim = node_feature
             self.num_relations = int(observation_space["types"].high[0]) + 1
             self.rgcn1 = RGCN_ML(num_layers, node_feature, node_feature, node_feature, self.num_relations)
-            self.node_embeddings = nn.Embedding(
+            self.node_embeddings = nn.Embedding(    
                 self.max_nodes,
                 self.node_feat_dim 
             )

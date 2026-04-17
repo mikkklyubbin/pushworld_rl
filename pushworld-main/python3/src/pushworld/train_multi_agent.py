@@ -29,7 +29,6 @@ from pushworld.load_model import load_PPO_model
 from torchrl.objectives import ClipPPOLoss, ValueEstimators
 from pushworld.callbacks import StatsCallback, MetricsCallback
 from pushworld.gym_env import INFORMATION_CHANEL_PER_OBJECT, INFORMATION_CHANEL_STATIC
-solver = get_check_k_fun(5)
 # Utils
 torch.manual_seed(0)
 from matplotlib import pyplot as plt
@@ -76,21 +75,44 @@ menv = PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, au
 
 eval_env =  PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/test", 100, **config)
 name_of_test = "test_learning_NOCON_AUGMENT_NEWACT_LOOPPEN"
-wandb.init(project="test_", config={**config_train, **config},name="clear_pushworld")
+wandb.init(project="test_", config={**config_train, **config},name="test_multyagent")
 model_save_path = path_to_rep + "python3/model/bst2"
 
 test_ac = []
 train_ac = []
 
-def test_model(model):
-    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100,  **config)
+def eval_multy_agent(test_env:MultiAgentPushTargetEnv, num_episodes, policy):
+    policy.eval()
+    device = next(policy.parameters()).device
+    ac = 0
+    for i in range(num_episodes):
+        td = test_env.reset().to(device)
+        done = False
+        while not done:
+            with torch.no_grad():
+                td_action = policy(td)
+            td_next = test_env.step(td_action)
+            td_next = td_next.to(device)
+            done = td_next.get(("next", "done")).any().item()
+            td = td_next
+        ac += test_env.is_solved()
+    policy.train()
+    print(ac / num_episodes * 100)
+    return ac / num_episodes * 100
 
+model_for_solver = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip")
+solver = get_solver_by_model(model_for_solver, 10)
+def test_model(model):
+    print(type(config))
+    test_env = PushTargetEnv(path_to_rep + f"benchmark/puzzles/level0/all/test", 100, seq=True,  **config)
+    ma_env = MultiAgentPushTargetEnv(test_env, solver, device=env_device)
     num_episodes = 200
-    s1 = eval_ac(test_env, num_episodes, model, verbose=True)
+    s1 = eval_multy_agent(ma_env, num_episodes, model)
     test_ac.append(s1)
     test_env =PushTargetEnv(path_to_rep + "benchmark/puzzles/level0/all/train", 100, seq = True, **config)
+    ma_env = MultiAgentPushTargetEnv(test_env, solver, device=env_device)
     num_episodes = 200
-    s1 = eval_ac(test_env, num_episodes, model, verbose=True)
+    s1 = eval_multy_agent(ma_env, num_episodes, model)
     train_ac.append(s1)
     fig, ax = plt.subplots()
     # plt.figure(figsize=(8, 5))
@@ -120,13 +142,13 @@ env_device = "cpu"  # The device where the simulator is run (VMAS can run on GPU
 print(device)
 
 # Sampling
-frames_per_batch = 6000  # Number of team frames collected per training iteration
+frames_per_batch = 500  # Number of team frames collected per training iteration
 n_iters = 5  # Number of sampling and training iterations
 total_frames = frames_per_batch * n_iters
 
 # Training
-num_epochs = 30  # Number of optimization steps per training iteration
-minibatch_size = 100  # Size of the mini-batches in each optimization step
+num_epochs = 60  # Number of optimization steps per training iteration
+minibatch_size = 10  # Size of the mini-batches in each optimization step
 lr = 3e-4  # Learning rate
 max_grad_norm = 1.0  # Maximum norm for the gradients
 
@@ -143,8 +165,7 @@ num_vmas_envs = (
     frames_per_batch // max_steps
 )  # Number of vectorized envs. frames_per_batch should be divisible by this number
 n_agents = 5
-model_for_solver = load_PPO_model("/home/mik/hse/Pushworld/pushworld-main/python3/model/bst2/best_model.zip")
-solver = get_solver_by_model(model_for_solver, 10)
+
 env = MultiAgentPushTargetEnv(menv, solver, device=env_device)
 
 env = TransformedEnv(
@@ -263,8 +284,9 @@ GAE = loss_module.value_estimator
 optim = torch.optim.Adam(loss_module.parameters(), lr)
 
 pbar = tqdm(total=n_iters, desc="episode_reward_mean = 0")
-
+# print(test_model(policy))
 episode_reward_mean_list = []
+cnt=0
 for tensordict_data in collector:
     print("hdwh")
     tensordict_data.set(
@@ -321,3 +343,6 @@ for tensordict_data in collector:
     episode_reward_mean_list.append(episode_reward_mean)
     pbar.set_description(f"episode_reward_mean = {episode_reward_mean}", refresh=False)
     pbar.update()
+    if (cnt % 10 == 0):
+        test_model(policy)
+    cnt +=1
