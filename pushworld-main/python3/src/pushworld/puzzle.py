@@ -275,7 +275,8 @@ class PushWorldPuzzle:
 
         self._goal_state = tuple(self._goal_state)
         self._initial_state = tuple(object_positions[elem_id] for elem_id in movables)
-
+        self.was_moved = [False for i in range(len(movables))]
+        
         # Create all collision data structures
 
         num_movables = self.num_movables = len(movables)
@@ -368,12 +369,13 @@ class PushWorldPuzzle:
         """A list of all movable objects, including their shapes."""
         return self._movable_objects
 
-    def get_next_state(self, state: State, action: int) -> State:
+    def get_next_state(self, state: State, action: int) -> Tuple[State, int]:
         """Returns the state that results from performing the `action` in the given
         `state`."""
+        self.was_moved = [False for i in range(len(movables))]
         agent_pos = state[AGENT_IDX]
         if agent_pos in self._agent_collision_map[action]:
-            return state  # the actor cannot move
+            return (state, 0)  # the actor cannot move
 
         walls = self._wall_collision_map[action]
         frontier = [AGENT_IDX]
@@ -398,7 +400,7 @@ class PushWorldPuzzle:
                 if obstacle_pos in walls[obstacle_idx]:
                     # transitive stopping; nothing can move.
                     self._pushed_objects[1:] = False
-                    return state
+                    return (state, 0)
 
                 self._pushed_objects[obstacle_idx] = True
                 frontier.append(obstacle_idx)
@@ -407,14 +409,18 @@ class PushWorldPuzzle:
         displacement = Actions.DISPLACEMENTS[action]
         displacement = tuple(int(x) for x in displacement)
         next_state[0] = tuple(displacement[i] + state[0][i] for i in range(2))
+        count = 1
+        self.was_moved[0] = True
         for i in range(1, self.num_movables):
             if self._pushed_objects[i]:
                 next_state[i] = tuple(displacement[j] + state[i][j] for j in range(2))
+                count += 1
+                self.was_moved[i] = True
                 self._pushed_objects[i] = False
             else:
                 next_state[i] = state[i]
 
-        return tuple(next_state)
+        return (tuple(next_state), count)
 
     def count_achieved_goals(self, state: State) -> int:
         """Returns the number of objects that are in their goal positions in a

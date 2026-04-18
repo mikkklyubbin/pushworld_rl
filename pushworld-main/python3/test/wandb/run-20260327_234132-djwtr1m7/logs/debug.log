@@ -1,0 +1,13 @@
+2026-03-27 23:41:32,338 INFO    MainThread:5712 [wandb_setup.py:_flush():81] Current SDK version is 0.24.0
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_setup.py:_flush():81] Configure stats pid to 5712
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_init.py:setup_run_log_directory():717] Logging user logs to /home/mikk/PushWorld/pushworld_rl/pushworld-main/python3/test/wandb/run-20260327_234132-djwtr1m7/logs/debug.log
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_init.py:setup_run_log_directory():718] Logging internal logs to /home/mikk/PushWorld/pushworld_rl/pushworld-main/python3/test/wandb/run-20260327_234132-djwtr1m7/logs/debug-internal.log
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_init.py:init():844] calling init triggers
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_init.py:init():849] wandb.init called with sweep_config: {}
+config: {'node_feature': 64, 'features_dim': 512, 'hidden_dim': 512, 'batch_size': 128, 'n_epochs': 2, 'need_pddl': False, 'use_concentrtion': False, 'new_actions_rew': 0, 'block_rew': 0, 'block_peny': 0, 'use_block': False, 'loop_penalty': 0.05, 'to_height': 11, 'to_width': 11, 'max_obj': 5, 'rgb': False, 'use_MDP': True, 'use_DIRECT': False, '_wandb': {}}
+2026-03-27 23:41:32,339 INFO    MainThread:5712 [wandb_init.py:init():892] starting backend
+2026-03-27 23:41:33,136 INFO    MainThread:5712 [wandb_init.py:init():895] sending inform_init request
+2026-03-27 23:41:33,158 INFO    MainThread:5712 [wandb_init.py:init():903] backend started and connected
+2026-03-27 23:41:33,363 INFO    MainThread:5712 [wandb_init.py:init():973] updated telemetry
+2026-03-27 23:41:33,372 INFO    MainThread:5712 [wandb_init.py:init():997] communicating run to backend with 90.0 second timeout

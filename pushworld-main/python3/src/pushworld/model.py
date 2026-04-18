@@ -80,12 +80,73 @@ class RGCN_ML(torch.nn.Module):
                 x = y
             x = self.norms[i // 2](x)
         return x
+    
+import torch
+import torch.nn as nn
+import math
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.0, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = x + self.pe[:x.size(0)]
+        return self.dropout(x)
+    
+class Sequnce_Coder(nn.Module):
+    def __init__(self,action_num, input_dim):
+        super().__init__()
+        self.action_embedding = nn.Embedding(action_num, input_dim)
+        self.pos_encoding = PositionalEncoding(input_dim)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=input_dim, 
+            nhead=4, 
+            dim_feedforward=4 * input_dim,
+            batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
+        self.pooling = nn.AdaptiveAvgPool1d(1)
+        
+
+    def forward(self, x):
+        x = self.action_embedding(x)
+        x = self.pos_encoding(x)
+        x = self.transformer_encoder(x) 
+        x = x.transpose(1, 2)          
+        x = self.pooling(x).squeeze(-1)   
+        return x
+    
+    
+class Mixer(nn.Module):
+    def __init__(self, input1_dim, input2_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(input1_dim + input2_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim),
+            nn.ReLU(),
+            nn.LayerNorm(output_dim)
+        )
+
+    def forward(self, x, y):
+        x = torch.cat([x, y], dim=1)
+        return self.mlp(x)
 
 class CustomCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=128, need_pddl  = False, node_feature = 64, hidden_dim = 512, in_channels = 3, num_layers = 10, copy_from = None):
         super(CustomCNN, self).__init__(observation_space, features_dim)
         print(in_channels)
         self.need_pddl = need_pddl
+        self.prev_actions_encoder = Sequnce_Coder(5, hidden_dim)
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
@@ -95,7 +156,7 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.Conv2d(64, 64, kernel_size=5, stride=2, padding=2),
             nn.ReLU(),
             nn.BatchNorm2d(64),
-            nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
+            nn.Conv2d(64, 64, kernel_size=5, stride=2, padding=2),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=5, stride=1, padding=2),
             nn.ReLU(),
@@ -112,21 +173,8 @@ class CustomCNN(BaseFeaturesExtractor):
             sample_input = torch.rand(1, cell_shape[2], cell_shape[0], cell_shape[1])
             n_flatten = self.cnn(sample_input).shape[1]
         
-        self.fc = nn.Sequential(
-            nn.Linear(n_flatten + observation_space.spaces['positions'].shape[0] * 2, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, features_dim),
-            nn.ReLU(),
-            nn.LayerNorm(features_dim)
-        )
-
-        self.for_last = nn.Sequential(
-            nn.Linear(features_dim + observation_space.spaces['last_ac'].shape[0], hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, features_dim),
-            nn.ReLU(),
-            nn.LayerNorm(features_dim)
-        )
+        self.fc = Mixer(n_flatten, observation_space.spaces['positions'].shape[0] * 2,hidden_dim, features_dim)
+        self.for_last = Mixer(features_dim, hidden_dim, hidden_dim, features_dim)
         if (self.need_pddl):
             self.max_nodes = observation_space["edges"].high[0][0] + 1
             self.node_feat_dim = node_feature
@@ -161,9 +209,7 @@ class CustomCNN(BaseFeaturesExtractor):
         pos_obs = observations['positions']
         batch_size = pos_obs.shape[0]
         pos_features = pos_obs.reshape(batch_size, -1)
-        
-        combined = torch.cat([cell_features, pos_features], dim=1)
-        res = self.fc(combined)
+        res = self.fc(cell_features, pos_features)
         if (self.need_pddl):
             edge_index = observations["edges"]
             edge_type = observations["types"]
@@ -182,9 +228,9 @@ class CustomCNN(BaseFeaturesExtractor):
             graph_embedding = global_mean_pool(x, batch)
             x = self.graph_projection(graph_embedding)
             res = res + self.combiner(torch.cat([res, x], dim=1))
-
-        combined2 = torch.cat([res, observations['last_ac']], dim=1)
-        return self.for_last(combined2) + res
+        observations["last_ac"] = torch.tensor(observations["last_ac"], dtype=torch.int32)
+        coded = self.prev_actions_encoder(observations["last_ac"])
+        return self.for_last(res, coded) + res
 
 
 

@@ -1,0 +1,19 @@
+{"time":"2026-03-27T23:41:33.160774581+03:00","level":"INFO","msg":"stream: starting","core version":"0.24.0"}
+{"time":"2026-03-27T23:41:33.664392341+03:00","level":"ERROR","msg":"api: HTTP error","status":403,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2026-03-27T23:41:33.664527345+03:00","level":"ERROR","msg":"featurechecker: failed to load features, all will be disabled","error":"returned error 403: {\"data\":null,\"errors\":[{\"message\":\"\\u003c!doctype html\\u003e\\u003cmeta charset=\\\"utf-8\\\"\\u003e\\u003cmeta name=viewport content=\\\"width=device-width, initial-scale=1\\\"\\u003e\\u003ctitle\\u003e403\\u003c/title\\u003e403 Forbidden\"}]}"}
+{"time":"2026-03-27T23:41:33.664837862+03:00","level":"INFO","msg":"stream: created new stream","id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:33.664980549+03:00","level":"INFO","msg":"handler: started","stream_id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:33.665225066+03:00","level":"INFO","msg":"stream: started","id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:33.665283174+03:00","level":"INFO","msg":"writer: started","stream_id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:33.66534233+03:00","level":"INFO","msg":"sender: started","stream_id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:33.66816527+03:00","level":"WARN","msg":"runupserter: server does not expand metric globs but the x_server_side_expand_glob_metrics setting is set; ignoring"}
+{"time":"2026-03-27T23:41:33.93510711+03:00","level":"ERROR","msg":"api: HTTP error","status":403,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2026-03-27T23:41:33.935334236+03:00","level":"ERROR","msg":"runupserter: failed to init run","error":"returned error 403: {\"data\":null,\"errors\":[{\"message\":\"\\u003c!doctype html\\u003e\\u003cmeta charset=\\\"utf-8\\\"\\u003e\\u003cmeta name=viewport content=\\\"width=device-width, initial-scale=1\\\"\\u003e\\u003ctitle\\u003e403\\u003c/title\\u003e403 Forbidden\"}]}"}
+{"time":"2026-03-27T23:41:33.962980107+03:00","level":"INFO","msg":"stream: closing","id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:33.96368572+03:00","level":"ERROR","msg":"sender: uploadConfigFile: runhandle: run not yet initialized"}
+{"time":"2026-03-27T23:41:34.01481621+03:00","level":"ERROR","msg":"runfiles: runhandle: run not yet initialized"}
+{"time":"2026-03-27T23:41:34.015924741+03:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-03-27T23:41:34.016008412+03:00","level":"INFO","msg":"handler: closed","stream_id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:34.016217588+03:00","level":"INFO","msg":"sender: closed","stream_id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:34.016248598+03:00","level":"INFO","msg":"stream: closed","id":"djwtr1m7"}
+{"time":"2026-03-27T23:41:34.381994315+03:00","level":"ERROR","msg":"stream: runURL: runhandle: run not yet initialized"}
