@@ -23,7 +23,7 @@ class channel_attention_module(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        x1 = self.avg_pool(x).squeeze(-1).squeueze(-1)
+        x1 = self.avg_pool(x).squeeze(-1).squeeze(-1)
         x1 = self.mlp(x1)
         x2 = self.max_pool(x).squeeze(-1).squeeze(-1)
         x2 = self.mlp(x2)
@@ -161,7 +161,7 @@ class CustomCNN(BaseFeaturesExtractor):
             nn.Conv2d(64, 128, kernel_size=5, stride=1, padding=2),
             nn.ReLU(),
             nn.BatchNorm2d(128),
-            # cbam(128),
+            cbam(128),
             nn.AdaptiveAvgPool2d((6, 6)), 
             nn.Flatten(),
         )
@@ -353,19 +353,19 @@ class CNNExtractor_with_map_preddiction(BaseFeaturesExtractor):
     def forward(self, observations):
         features = self.cnn(observations)
         pred_map = self.dec(features)
-        res = self.combiner(torch.cat([features, pred_map.reshape(-1, pred_map.shape[-1] * pred_map.shape[-2])], dim=1))
-        return res
+        return (features, pred_map)
     
-def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}, extractor_class = CustomCNN):
+def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_feature = 64, features_dim=512, hidden_dim=512, batch_size = 128, n_epochs=2, model_kwargs = {"in_channels": 3}, extractor_class = CustomCNN, policy_class = CustomPolicy, policy_data = {}):
 
     policy_kwargs = dict(
         features_extractor_class=extractor_class,
         features_extractor_kwargs=dict(features_dim=features_dim, need_pddl = need_pddl, node_feature = node_feature, hidden_dim=hidden_dim, **model_kwargs),
-        net_arch=dict(pi=[512, 256], vf=[512, 256])
+        net_arch=dict(pi=[512, 256], vf=[512, 256]),
+        **policy_data, 
     )
 
     model = PPO(
-        CustomPolicy,
+        policy_class,
         env,
         policy_kwargs=policy_kwargs,
         learning_rate=0.0002,

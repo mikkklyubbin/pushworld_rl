@@ -368,11 +368,16 @@ class PushWorldPuzzle:
     def movable_objects(self) -> List[PushWorldObject]:
         """A list of all movable objects, including their shapes."""
         return self._movable_objects
+    
+    @property
+    def movables(self) -> List[PushWorldObject]:
+        """A list of all movable objects, including their shapes."""
+        return self._movable_objects
 
     def get_next_state(self, state: State, action: int) -> Tuple[State, int]:
         """Returns the state that results from performing the `action` in the given
         `state`."""
-        self.was_moved = [False for i in range(len(movables))]
+        self.was_moved = [False for i in range(len(self.movable_objects))]
         agent_pos = state[AGENT_IDX]
         if agent_pos in self._agent_collision_map[action]:
             return (state, 0)  # the actor cannot move
