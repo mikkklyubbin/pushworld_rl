@@ -1301,35 +1301,22 @@ class PushTargetEnv(PushWorldEnv):
                     return obs, rew, terminated, truncated, info
                 if (not  self.teleport):
                     self.acts.append(action % 4)
-<<<<<<< HEAD
-                    rew -= self.rec_alst_moves(action % 4) * self.loop_penalty
-                    observation, reward, terminated, truncated, info = super().step(action % 4)
-=======
                     rew -= self.rec_alst_moves(action % 4) * self.loop_penalty* int(not(self.is_obj_pushed))
                     obs , reward, terminated, truncated, info = super().step(action % 4)
                     obs = self.convert(obs)
                     rew += reward
->>>>>>> b1c7c79 (debug for teleport)
+
                 self.prev_av = None
                 av_delta += obs["av"].sum()
                 rew += self.new_actions_rew * av_delta
                 for i in range(len(prev_st)):
                     if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
-<<<<<<< HEAD
-                        reward -= self.block_peny
-                reward += self.new_actions_rew * av_delta
-                reward += sum(self.current_puzzle._block) * self.block_rew
-                truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, observation)
-                return obs, reward + rew, terminated, truncated, info
-=======
                         rew -= self.block_peny
-                    if (i > 0 and (self._current_state[i] != prev_st[i])):
-                        self.last_moves = [0, 0, 0, 0]
                 rew += self.new_actions_rew * av_delta
                 rew += sum(self.current_puzzle._block) * self.block_rew
                 truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, obs)
                 return obs, rew, terminated, truncated, info
->>>>>>> b1c7c79 (debug for teleport)
+
             else:
                 print("warning: no path")
                 rew = -1

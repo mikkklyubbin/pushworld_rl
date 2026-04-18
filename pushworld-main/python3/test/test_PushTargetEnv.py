@@ -58,7 +58,7 @@ print("in_channels", in_channels)
 # extractor = torch.load("/home/mik/hse/Pushworld/pushworld-main/python3/model/distance_model")
 model_kwargs = {"in_channels": in_channels}
 
-config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl,"extractor_class": CNNExtractor_with_map_preddiction}
+config_train = {"node_feature": 64, "features_dim": 512, "hidden_dim": 512, "batch_size": 128, "n_epochs": 2, "need_pddl":need_pddl}
 print(rgb)
 
 

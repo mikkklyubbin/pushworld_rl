@@ -146,7 +146,8 @@ class CustomCNN(BaseFeaturesExtractor):
         super(CustomCNN, self).__init__(observation_space, features_dim)
         print(in_channels)
         self.need_pddl = need_pddl
-        self.prev_actions_encoder = Sequnce_Coder(5, hidden_dim)
+        dim_for_act = 12
+        self.prev_actions_encoder = Sequnce_Coder(5, dim_for_act)
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
@@ -174,7 +175,7 @@ class CustomCNN(BaseFeaturesExtractor):
             n_flatten = self.cnn(sample_input).shape[1]
         
         self.fc = Mixer(n_flatten, observation_space.spaces['positions'].shape[0] * 2,hidden_dim, features_dim)
-        self.for_last = Mixer(features_dim, hidden_dim, hidden_dim, features_dim)
+        self.for_last = Mixer(features_dim, dim_for_act, hidden_dim, features_dim)
         if (self.need_pddl):
             self.max_nodes = observation_space["edges"].high[0][0] + 1
             self.node_feat_dim = node_feature
@@ -377,7 +378,8 @@ def train_ppo(env, callback, total_timesteps=60000000, need_pddl = False, node_f
         vf_coef=1,
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
-
+    total_params = sum(p.numel() for p in model.policy.features_extractor.parameters())
+    print(f"Total parameters in features extractor: {total_params}")
     model.learn(total_timesteps=total_timesteps, callback=callback)
     return model
 
