@@ -39,6 +39,9 @@ HISTORY_STACK = 8
 
 INFORMATION_CHANEL_STATIC = 1 + HISTORY_STACK
 
+def smart_check(good, x, y):
+    return (x >= 0 and y >= 0 and x < len(good) and y < len(good[0]) and good[x][y])
+
 def calc_pathes(good, my_pos, puz):
     distance = np.zeros(puz.dimensions) + 1e15
     par = np.zeros((puz.dimensions[0], puz.dimensions[1], 2))-1
@@ -532,6 +535,22 @@ class PushWorldEnv(gym.Env):
                         # print(distances[i][j], i, j)
                         res.append((i, j))
         return res
+    
+    def find_perimater_map(self, distances):
+        mv_b = self.current_puzzle.movable_objects
+        perimeter = np.zeros((self._max_cell_width + 1, self._max_cell_height + 1), dtype=np.bool)
+        for i in range(1, len(mv_b)):
+            for el in self.get_all_cells(self.current_puzzle._movable_objects[i], self._current_state[i]):
+                for dx in [-1, 0, 1]:
+                    for dy in [-1, 0, 1]:
+                        if (el[0] + dx >= 0 and el[0] + dx < self._max_cell_width and el[1] + dy >= 0 and el[1] + dy < self._max_cell_height):
+                            perimeter[el[0] + dx][el[1] + dy] = True
+        for el in self.current_puzzle.wall_positions:
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if (self.val_point(el[0] + dx, el[1] + dy)):
+                        perimeter[el[0] + dx][el[1] + dy] = True
+        return perimeter
 
 
     def get_matrix_reachability(self, verbose = False) -> None:
@@ -962,7 +981,7 @@ class PushTargetEnv(PushWorldEnv):
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
     
-    def move_to_point(self,x, y):
+    def move_to_point(self,x, y, need_last = False):
         self.get_matrix_reachability()
         rew = 0
         act = self.get_action_list(x, y)
@@ -970,11 +989,11 @@ class PushTargetEnv(PushWorldEnv):
         # print(act)
         self.acts += act
         penalty = 0
-
+        cnt = 0
         for el in act:
             tmp = tuple(self._current_state)
             penalty += self.rec_alst_moves(el) * self.loop_penalty * int(not(self.is_obj_pushed))
-            observation, reward, terminated, truncated, info = super().step(el, fast=True)
+            observation, reward, terminated, truncated, info = super().step(el, fast=(cnt < len(act) - 1) or (not need_last))
             if terminated or truncated:
                 info["terminal_observation"] = self.convert(observation)
             else:
@@ -987,6 +1006,7 @@ class PushTargetEnv(PushWorldEnv):
                 #actions should be design, like not finish actions
                 raise LookupError
             rew += reward
+            cnt += 1
 
         return self.convert(self.get_observation()), rew - penalty, False  , False, {}
 
@@ -1001,6 +1021,8 @@ class PushTargetEnv(PushWorldEnv):
                     if (el[0] == x + dx and el[1] == y + dy):
                         return True
                 return False
+            
+    
     
     
     def get_av_act(self):
@@ -1019,10 +1041,22 @@ class PushTargetEnv(PushWorldEnv):
             f = self.get_all_interesting(self.distance).reshape(-1)
             av[shift: shift + f.shape[0]] = f
         st = self._current_state
+        per = None
+        if (self.teleport):
+            self.get_matrix_reachability()
+            per = self.find_perimater_map(self.distance)
         for a in range(4):
             av[a] = ((st[0][0], st[0][1]) not in self.current_puzzle._agent_collision_map[a])
-            if (self.teleport and not self.check_not_stupid_point(st[0][0] + Actions.DISPLACEMENTS[a][0], st[0][1] + Actions.DISPLACEMENTS[a][1])):
-                av[a] = False
+            dx, dy = Actions.DISPLACEMENTS[a]
+            
+            if (self.teleport and av[a]):
+                good = False
+                for el in  self.get_all_cells(mv_b[AGENT_IDX], (dx + st[0][0], dy + st[0][1])):
+                    if (smart_check(per, el[0], el[1])):
+                        good = True
+                        break
+                if (not good): 
+                    av[a] = False
             if (self.use_DIRECT and not self.last_ac_is_direct):
                 av[a] = False
         self.get_matrix_reachability()
@@ -1052,7 +1086,16 @@ class PushTargetEnv(PushWorldEnv):
             av[action] = good
             
         assert(av in self.observation_space["av"])
+
+        if (av.sum() == 0):
+            print(av)
+            rgb = self.render()
+            savergb(rgb, "/home/mik/hse/Pushworld/pushworld-main/python3/1.jpg")
+            print("no av")
+            self.get_av_act()
         self.prev_av = av
+        assert av.sum() > 0, "No available actions"
+
         return av
 
 
@@ -1253,24 +1296,40 @@ class PushTargetEnv(PushWorldEnv):
             self.calc_cells_for_push(action % 4)
             optimal = self.get_point_to_go(action // 4, action % 4, self.distance_pushable[action % 4])
             if (optimal != (-1, -1)):
-                obs, rew, terminated, truncated, info = self.move_to_point(optimal[0], optimal[1])
+                obs, rew, terminated, truncated, info = self.move_to_point(optimal[0], optimal[1], need_last=self.teleport)
                 if (truncated or terminated):
                     return obs, rew, terminated, truncated, info
                 if (not  self.teleport):
                     self.acts.append(action % 4)
-                    rew -= self.rec_alst_moves(action % 4) * self.loop_penalty* int(not(self.is_obj_pushed))
+<<<<<<< HEAD
+                    rew -= self.rec_alst_moves(action % 4) * self.loop_penalty
                     observation, reward, terminated, truncated, info = super().step(action % 4)
+=======
+                    rew -= self.rec_alst_moves(action % 4) * self.loop_penalty* int(not(self.is_obj_pushed))
+                    obs , reward, terminated, truncated, info = super().step(action % 4)
+                    obs = self.convert(obs)
+                    rew += reward
+>>>>>>> b1c7c79 (debug for teleport)
                 self.prev_av = None
-                obs = self.convert(observation)
                 av_delta += obs["av"].sum()
-                reward += self.new_actions_rew * av_delta
+                rew += self.new_actions_rew * av_delta
                 for i in range(len(prev_st)):
                     if (self.current_puzzle._block[i] and (self._current_state[i] != prev_st[i])):
+<<<<<<< HEAD
                         reward -= self.block_peny
                 reward += self.new_actions_rew * av_delta
                 reward += sum(self.current_puzzle._block) * self.block_rew
                 truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, observation)
                 return obs, reward + rew, terminated, truncated, info
+=======
+                        rew -= self.block_peny
+                    if (i > 0 and (self._current_state[i] != prev_st[i])):
+                        self.last_moves = [0, 0, 0, 0]
+                rew += self.new_actions_rew * av_delta
+                rew += sum(self.current_puzzle._block) * self.block_rew
+                truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, obs)
+                return obs, rew, terminated, truncated, info
+>>>>>>> b1c7c79 (debug for teleport)
             else:
                 print("warning: no path")
                 rew = -1
