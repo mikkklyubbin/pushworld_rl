@@ -111,7 +111,6 @@ class PushWorldEnv(gym.Env):
         self.augment_timer = 200
         self.lstm = lstm
         self.is_obj_pushed = False
-
         for puzzle_file_path in iter_files_with_extension(
             puzzle_path, PUZZLE_EXTENSION
         ):
@@ -230,6 +229,7 @@ class PushWorldEnv(gym.Env):
             })
         self.obj_pathes = None
         self.obj_blocked = [False for i in range(self._max_objs)]
+        
 
     def set_goals(self, goals):
         self.current_puzzle._goal_state = goals[1:]
@@ -890,6 +890,8 @@ class PushTargetEnv(PushWorldEnv):
         lstm = False,
         max_env_steps = 30, 
         teleport = False,
+        sub_models_list = [],
+        length_list = []
     ) -> None:
         super().__init__(puzzle_path, max_steps, border_width, pixels_per_cell, standard_padding, to_height=to_height, to_width=to_width, seq=seq, augment=augment, need_pddl=need_pddl, rgb=rgb, max_obj=max_obj, lstm=lstm)
         self.max_mov_ob = 0
@@ -897,6 +899,8 @@ class PushTargetEnv(PushWorldEnv):
         self.max_steps = max_steps
         self.new_actions_rew = new_actions_rew
         self.teleport = teleport
+        self.sub_model_list = sub_models_list
+        self.length_list = length_list
         self.acts = []
         self.use_block = use_block
         self.hash_history = {}
@@ -918,7 +922,8 @@ class PushTargetEnv(PushWorldEnv):
             assert max_obj >= self.max_mov_ob
             self.max_mov_ob = max_obj
         self.dir_shift = self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS
-        self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS + use_DIRECT * (self._max_cell_height + 1) * (self._max_cell_width + 1))
+        self.env_acts = self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS + use_DIRECT * (self._max_cell_height + 1) * (self._max_cell_width + 1)
+        self._action_space = gym.spaces.Discrete(self.max_mov_ob * NUM_ACTIONS + self.max_mov_ob * NUM_AD_ACTIONS + use_DIRECT * (self._max_cell_height + 1) * (self._max_cell_width + 1) + len(self.sub_model_list))
         boss = super().observation_space
         mat1_ob = boss["cell"] if self.pddl else boss
         #print(self._max_cell_height)
@@ -980,6 +985,21 @@ class PushTargetEnv(PushWorldEnv):
     def current_puzzle(self) -> PushWorldPuzzle or None:
         """The current puzzle, or `None` if `reset` has not yet been called."""
         return self._current_puzzle
+    
+    def sub_modal_act(self, action):
+        action -= self.env_acts
+        assert action < len(self.sub_model_list), "No such action"
+        obs, info = self.get_obs_and_info()
+        obs = self.convert(obs)
+        reward = 0
+        for i in range(self.length_list[action]):
+            step_action = self.sub_model_list[action]
+            obs,  rew, terminated, truncated, info = self.step(step_action)
+            reward += rew
+            truncated, terminated, info = self.trans_term_truncated(truncated, terminated, info, obs)
+            if (terminated or truncated):
+                return obs, reward, terminated, truncated, info
+        return obs, reward, False, False, info 
     
     def move_to_point(self,x, y, need_last = False):
         self.get_matrix_reachability()
@@ -1119,7 +1139,7 @@ class PushTargetEnv(PushWorldEnv):
 
         This function randomly selects a puzzle from those provided to the constructor
         and resets the environment to the initial state of the puzzle.
-
+observation
         Args:
             seed: If not None, the random number generator in this environment is reset
                 with this seed.
@@ -1320,6 +1340,8 @@ class PushTargetEnv(PushWorldEnv):
             else:
                 print("warning: no path")
                 rew = -1
+        elif (action < self.env_acts + len(self.sub_model_list)):
+            return self.sub_modal_act(action)
         else:
             print("warning: ??")
             rew = -1
